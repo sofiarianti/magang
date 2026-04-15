@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { UserIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import useAPI from '../../hooks/useAPI';
-import { exportRowsToExcel, exportRowsToPdf, formatDateForFilter, isWithinDateRange } from './exportUtils';
+import { exportRowsToExcel, exportRowsToPdf, formatDateForFilter, isWithinDateRange } from './exportUtilsAdmin';
 
 function ListDonatur() {
   const { data: donaturData, loading, error } = useAPI('/api/donatur');

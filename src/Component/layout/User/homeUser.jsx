@@ -5,10 +5,13 @@ import endpoints from '../../Services/endpointUser';
 
 function Home({ user }) {
   const navigate = useNavigate();
+  const isGuest = Boolean(user?.isGuest);
   const donaturId = user?.id || user?.donatur?.id;
-  const endpoint = donaturId
-    ? endpoints.donatur.getById(donaturId)
-    : endpoints.donatur.getAll;
+  const endpoint = isGuest
+    ? null
+    : donaturId
+      ? endpoints.donatur.getById(donaturId)
+      : endpoints.donatur.getAll;
   const { data, loading, error } = useAPI(endpoint);
 
   // Carousel state
@@ -92,7 +95,7 @@ function Home({ user }) {
   }
 
   // Fetch transactions by kode_donatur (only when donatur data is loaded and we have kd_donatur)
-  const transaksiEndpoint = !loading && currentDonatur?.kode_donatur
+  const transaksiEndpoint = !isGuest && !loading && currentDonatur?.kode_donatur
     ? endpoints.transaksi.getByKodeDonatur(currentDonatur.kode_donatur)
     : null;
   const { data: transaksiData } = useAPI(transaksiEndpoint);
@@ -109,7 +112,9 @@ function Home({ user }) {
   });
 
   const displayName =
-    currentDonatur?.nama || user?.name || user?.nama || 'Sahabat Dermawan';
+    isGuest
+      ? 'Sahabat Dermawan'
+      : currentDonatur?.nama || user?.name || user?.nama || 'Sahabat Dermawan';
 
   const normalizeStatus = (trx) => {
    
@@ -263,6 +268,35 @@ function Home({ user }) {
     return { totalDonation, monthlyDonation, yearlyDonation };
   }, [transaksiData]);
 
+  // Calculate average donation per transaction
+  const averageDonation = React.useMemo(() => {
+    if (!transaksiData) return 0;
+    
+    const transactions = Array.isArray(transaksiData) 
+      ? transaksiData 
+      : transaksiData?.transaksi || [];
+    
+    if (transactions.length === 0) return 0;
+    
+    let totalAmount = 0;
+    transactions.forEach((trx) => {
+      totalAmount += Number(trx.jumlah_donasi) || 0;
+    });
+    
+    return Math.round(totalAmount / transactions.length);
+  }, [transaksiData]);
+
+  // Calculate total transaction frequency
+  const totalTransactionFrequency = React.useMemo(() => {
+    if (!transaksiData) return 0;
+    
+    const transactions = Array.isArray(transaksiData) 
+      ? transaksiData 
+      : transaksiData?.transaksi || [];
+    
+    return transactions.length;
+  }, [transaksiData]);
+
   const quickStats = [
     {
       label: 'Total Donasi Saya',
@@ -275,22 +309,20 @@ function Home({ user }) {
       PillLabel: 'Sejak bergabung',
     },
     {
-      label: 'Donasi Bulan Ini',
-      value: donationStats.monthlyDonation.toLocaleString('id-ID', {
+      label: 'Rata-rata per Transaksi',
+      value: averageDonation.toLocaleString('id-ID', {
         style: 'currency',
         currency: 'IDR',
         minimumFractionDigits: 0,
       }),
-      change: '+8%',
-      PillLabel: 'Bulan ini',
+      change: '+5%',
+      PillLabel: 'Konsistensi donasi',
     },
     {
-      label: 'Transaksi Bulan Ini',
-      value: `${monthlyStats.currentMonthTransactions} transaksi`,
-      change: monthlyStats.previousMonthTransactions > 0 
-        ? `+${Math.round(((monthlyStats.currentMonthTransactions - monthlyStats.previousMonthTransactions) / monthlyStats.previousMonthTransactions) * 100)}%`
-        : '+0%',
-      PillLabel: 'Donatur aktif',
+      label: 'Total Frekuensi Transaksi',
+      value: `${totalTransactionFrequency} kali`,
+      change: '+15%',
+      PillLabel: 'Dari awal bergabung',
     },
   ];
 
@@ -315,7 +347,7 @@ function Home({ user }) {
     },
   ];
 
-  if (loading)
+  if (!isGuest && loading)
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-amber-50">
         <p className="text-blue-600 text-sm md:text-base">
@@ -324,7 +356,7 @@ function Home({ user }) {
       </div>
     );
 
-  if (error)
+  if (!isGuest && error)
     return (
       <div className="min-h-screen flex items-center justify-center bg-red-50">
         <p className="text-red-600 text-sm md:text-base">{error}</p>
@@ -447,148 +479,11 @@ function Home({ user }) {
               ))}
             </section>
 
-            {/* Riwayat transaksi */}
-            <section className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="px-4 py-3 border-b border-blue-200 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-blue-900">
-                    Riwayat Transaksi Terakhir
-                  </h3>
-                  <p className="text-[11px] text-blue-600">
-                    Ringkasan beberapa transaksi donasi terkini Anda.
-                  </p>
-                </div>
-                <button className="text-[11px] text-amber-600 hover:text-amber-700 font-medium">
-                  Lihat semua
-                </button>
-              </div>
-              <div className="divide-y divide-slate-50">
-                {recentTransactions.map((trx) => (
-                  <div
-                    key={trx.id}
-                    className="px-4 py-3 flex items-center justify-between text-xs md:text-sm hover:bg-slate-50/70"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700">
-                        ZK
-                      </div>
-                      <div>
-                        <p className="font-medium text-blue-900">
-                          {trx.jenis}
-                        </p>
-                        <p className="text-[11px] text-blue-600">
-                          {trx.tanggal}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-blue-900">
-                        {trx.nominal}
-                      </p>
-                      <p
-                        className={`text-[11px] font-medium ${
-                          trx.status === 'Sukses'
-                            ? 'text-green-600'
-                            : 'text-amber-600'
-                        }`}
-                      >
-                        {trx.status}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+         
           </div>
 
           {/* Kolom kanan */}
           <div className="space-y-4">
-            {/* Kartu ringkasan donasi hari ini */}
-            <section className="bg-white rounded-2xl shadow-sm border border-blue-200 px-5 py-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] text-blue-600">Ringkasan Hari Ini</p>
-                  <h3 className="text-sm font-semibold text-blue-900">
-                    Aktivitas Donasi Anda
-                  </h3>
-                </div>
-                <button
-                  onClick={() => {
-                    setTargetInput(monthlyTarget.toString());
-                    setShowTargetModal(true);
-                  }}
-                  className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-medium hover:bg-amber-200 transition-colors"
-                >
-                  {monthlyTarget > 0 ? 'Ubah Target' : 'Atur Target'}
-                </button>
-              </div>
-              
-              {monthlyTarget > 0 ? (
-                <>
-                  <div className="grid grid-cols-3 gap-3 text-center text-[11px]">
-                    <div className="rounded-xl bg-blue-50 px-2 py-2">
-                      <p className="text-blue-700 mb-1">Donasi Hari Ini</p>
-                      <p className="text-sm font-semibold text-blue-900">
-                        {todayDonation.toLocaleString('id-ID', {
-                          style: 'currency',
-                          currency: 'IDR',
-                          minimumFractionDigits: 0,
-                        })}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-amber-50 px-2 py-2">
-                      <p className="text-amber-700 mb-1">Target Harian</p>
-                      <p className="text-sm font-semibold text-amber-800">
-                        {dailyTarget.toLocaleString('id-ID', {
-                          style: 'currency',
-                          currency: 'IDR',
-                          minimumFractionDigits: 0,
-                        })}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-blue-50 px-2 py-2">
-                      <p className="text-blue-700 mb-1">Sisa Target</p>
-                      <p className="text-sm font-semibold text-amber-600">
-                        {Math.max(monthlyTarget - donationStats.monthlyDonation, 0).toLocaleString('id-ID', {
-                          style: 'currency',
-                          currency: 'IDR',
-                          minimumFractionDigits: 0,
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-1">
-                    <div className="flex items-center justify-between text-[10px] text-blue-600 mb-1">
-                      <span>Progress Target Bulan Ini</span>
-                      <span>{Math.round(Math.min((donationStats.monthlyDonation / monthlyTarget) * 100, 100))}%</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-500 via-blue-600 to-amber-500 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min(Math.round((donationStats.monthlyDonation / monthlyTarget) * 100), 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="py-6 text-center">
-                  <p className="text-xs text-blue-600 mb-3">Belum ada target donasi yang ditetapkan</p>
-                  <button
-                    onClick={() => {
-                      setTargetInput('');
-                      setShowTargetModal(true);
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-xs font-bold hover:from-blue-700 hover:to-blue-800 transition-all"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Atur Target Donasi
-                  </button>
-                </div>
-              )}
-            </section>
-
             {/* Program unggulan */}
             <section className="bg-white rounded-2xl shadow-sm border border-blue-200 px-5 py-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -628,6 +523,8 @@ function Home({ user }) {
                 ))}
               </div>            </section>
 
+            {/* Kartu Info Zakat Terbaru */}
+
             {/* Tips & Panduan */}
             <section className="bg-white rounded-2xl shadow-sm border border-blue-200 px-5 py-4 space-y-3">
               <h3 className="text-sm font-semibold text-blue-900">
@@ -664,7 +561,7 @@ function Home({ user }) {
               </div>            </section>            
           </div>
         </div>
-        {!currentDonatur && (
+        {!isGuest && !currentDonatur && (
           <p className="text-[11px] md:text-xs text-blue-600">
             Belum ada data donatur yang terhubung dengan akun ini. Silakan
             lengkapi profil untuk pengalaman yang lebih personal.
@@ -708,17 +605,17 @@ function Home({ user }) {
             }
 
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="space-y-4">
                 {beritaList.slice(0, 3).map((berita, idx) => (
                   <div
                     key={berita.id_informasi_mahasiswa || berita.id || idx}
-                    className="bg-white rounded-2xl shadow-md border border-blue-200 overflow-hidden hover:shadow-lg hover:border-amber-300 transition-all duration-300 group cursor-pointer"
+                    className="bg-white rounded-2xl shadow-md border border-blue-200 overflow-hidden hover:shadow-lg hover:border-amber-300 transition-all duration-300 group cursor-pointer flex flex-row"
                     onClick={() => {
                       setSelectedBerita(berita);
                       setShowBeritaModal(true);
                     }}
                   >
-                    <div className="h-40 bg-gradient-to-br from-blue-500 to-blue-600 overflow-hidden relative">
+                    <div className="h-40 w-40 flex-shrink-0 bg-gradient-to-br from-blue-500 to-blue-600 overflow-hidden relative">
                       {berita.foto ? (
                         <img
                           src={berita.foto}
@@ -734,7 +631,7 @@ function Home({ user }) {
                       )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
                     </div>
-                    <div className="p-5 space-y-3">
+                    <div className="p-5 space-y-3 flex-1">
                       <div className="flex items-center justify-between">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
                           {berita.kategori || 'Berita'}

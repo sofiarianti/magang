@@ -16,7 +16,7 @@ function getKodeHimpunFromAdmin(adminData) {
   return null;
 }
 
-function Login({ onLogin, onAdminLogin, onGoToRegister }) {
+function Login({ onLogin, onAdminLogin, onGoToRegister, onGuestAccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -51,27 +51,34 @@ function Login({ onLogin, onAdminLogin, onGoToRegister }) {
         console.warn('Login donatur gagal, mencoba sebagai admin...', errUser);
       }
 
-      try {
-        const responseAdmin = await api.post(endpointsAdmin.users.login, {
-          email,
-          password,
-        });
+      const adminLoginEndpoints = [
+        endpointsAdmin.users.login,
+        endpointsAdmin.users.loginSuperAdmin,
+      ].filter(Boolean);
 
-        const adminData = responseAdmin.data;
-        const kodeHimpun = getKodeHimpunFromAdmin(adminData);
+      for (const adminLoginEndpoint of adminLoginEndpoints) {
+        try {
+          const responseAdmin = await api.post(adminLoginEndpoint, {
+            email,
+            password,
+          });
 
-        const storedAdmin = {
-          ...adminData,
-          ...(kodeHimpun ? { kode_himpun: kodeHimpun } : {}),
-        };
+          const adminData = responseAdmin.data;
+          const kodeHimpun = getKodeHimpunFromAdmin(adminData);
 
-        localStorage.setItem('admin_user', JSON.stringify(storedAdmin));
-        if (onAdminLogin) {
-          onAdminLogin(storedAdmin);
+          const storedAdmin = {
+            ...adminData,
+            ...(kodeHimpun ? { kode_himpun: kodeHimpun } : {}),
+          };
+
+          localStorage.setItem('admin_user', JSON.stringify(storedAdmin));
+          if (onAdminLogin) {
+            onAdminLogin(storedAdmin);
+          }
+          return;
+        } catch (errAdmin) {
+          lastError = errAdmin;
         }
-        return;
-      } catch (errAdmin) {
-        lastError = errAdmin;
       }
 
       if (lastError) {
@@ -86,7 +93,7 @@ function Login({ onLogin, onAdminLogin, onGoToRegister }) {
         'Login gagal. Periksa kembali data Anda.';
       if (is404 && err.config?.url?.includes('/api/users/login')) {
         message =
-          'Login donatur gagal. Endpoint admin (/api/users/login) tidak ditemukan (404). Pastikan kredensial donatur benar atau backend sudah deploy.';
+          'Login donatur gagal. Endpoint admin (/api/users/login atau /api/users/login/superadmin) tidak ditemukan (404). Pastikan kredensial benar atau backend sudah deploy.';
       }
       setError(message);
     } finally {
@@ -262,6 +269,13 @@ function Login({ onLogin, onAdminLogin, onGoToRegister }) {
                     Daftar sekarang
                   </button>
                 </p>
+                <button
+                  type="button"
+                  onClick={onGuestAccess}
+                  className="mt-3 text-xs font-semibold text-blue-700 transition-colors hover:text-blue-900"
+                >
+                  Lanjut sebagai Guest Donatur
+                </button>
               </div>
           </div>
         </div>
@@ -271,3 +285,7 @@ function Login({ onLogin, onAdminLogin, onGoToRegister }) {
 }
 
 export default Login;
+
+
+
+

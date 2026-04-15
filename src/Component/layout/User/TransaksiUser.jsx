@@ -1,9 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from "react-router-dom";
 import useAPI from '../../hooks/useAPI';
 import endpointsUser from '../../Services/endpointUser';
-import endpointsAdmin from '../../Services/endpointAdmin';
-import usePostDetailTransaksi from '../../hooks/usePostDetail_transaksi';
+import usePostDonatur from '../../hooks/usePostDonatur';
 import usePostTransaksi from '../../hooks/usePostTransaksi';
 import useDeleteTransaksi from '../../hooks/useDeleteTransaksi';
 import useDeleteDetail_transaksi from '../../hooks/useDeleteDetail_transaksi';
@@ -11,14 +10,63 @@ import useUpdateTransaksi from '../../hooks/useUpdateTransaksi';
 import { addNotification } from '../../Services/notifikasi';
 import api from '../../Services/api';
 
-function Transaksi({ user: userProp = null }) {
+const FORCED_JENIS_ALIASES = {
+  zakat: ['zakat'],
+  'infaq-sedekah': ['infaq/sedekah', 'infaq', 'infak/sedekah', 'infak', 'sedekah'],
+  wakaf: ['wakaf'],
+};
+
+function normalizeDonationLabel(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/infak/g, 'infaq')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeInlineText(value) {
+  return String(value || '')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findJenisDonasiByKey(jenisDonasiList, forcedJenisKey) {
+  if (!forcedJenisKey) return null;
+
+  const aliases = FORCED_JENIS_ALIASES[forcedJenisKey] || [forcedJenisKey];
+
+  return (
+    jenisDonasiList.find((item) => {
+      const namaJenis = normalizeDonationLabel(
+        item.nama_donasi ||
+        item.nama ||
+        item.nama_jenis ||
+        ''
+      );
+
+      return aliases.some((alias) => namaJenis.includes(normalizeDonationLabel(alias)));
+    }) || null
+  );
+}
+
+function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const location = useLocation();
   const {
     selectedJenis: initialSelectedJenis = null,
     selectedDetail: initialSelectedDetail = null,
     user: locationUser = null,
   } = location.state || {};
-  const user = userProp || locationUser;
+  const hasLocationKodeDonatur = Boolean(
+    locationUser?.kode_donatur || locationUser?.donatur?.kode_donatur
+  );
+  const user =
+    hasLocationKodeDonatur || !userProp
+      ? (locationUser || userProp)
+      : userProp;
+  const isGuest = Boolean(user?.isGuest);
 
   const {
     data: jenisData,
@@ -32,6 +80,8 @@ function Transaksi({ user: userProp = null }) {
     error: errorDetail,
   } = useAPI(endpointsUser.detail_donasi.getAll);
 
+  const { data: donaturData } = useAPI(endpointsUser.donatur.getAll);
+
   // Ambil semua himpun (jalur/penghimpun) untuk menentukan kode_himpun
   const {
     data: himpunData,
@@ -39,23 +89,31 @@ function Transaksi({ user: userProp = null }) {
     error: errorHimpun,
   } = useAPI(endpointsUser.himpun.getAll);
 
-  // Ambil semua user admin/penghimpun untuk memetakan kode_himpun → user
   const {
-    data: usersData,
-    loading: loadingUsers,
-    error: errorUsers,
-  } = useAPI(endpointsAdmin.users.getAll);
+    data: detailHimpunData,
+    loading: loadingDetailHimpun,
+    error: errorDetailHimpun,
+  } = useAPI(endpointsUser.detail_himpun.getAll);
 
+  // Ambil semua user admin/penghimpun untuk memetakan kode_himpun → user
   // Ambil QR code aktif dari /api/qrcode/active
   const {
     data: qrCodeData,
-    loading: loadingQrCode,
-    error: errorQrCode,
   } = useAPI(endpointsUser.qrcode.getActive);
 
   const [metodePembayaran, setMetodePembayaran] = useState('');
+  const [selectedHimpunCode, setSelectedHimpunCode] = useState('');
+  const [selectedPaymentDetailCode, setSelectedPaymentDetailCode] = useState('');
+  const [isPaymentDropdownOpen, setIsPaymentDropdownOpen] = useState(false);
+  const [expandedPaymentMethodCode, setExpandedPaymentMethodCode] = useState('');
   const [nominal, setNominal] = useState('');
   const [catatanDonatur, setCatatanDonatur] = useState('');
+  const [guestIdentity, setGuestIdentity] = useState({
+    nama: user?.donatur?.nama || (user?.nama && user.nama !== 'Guest Donatur' ? user.nama : ''),
+    jenis_kelamin: user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '',
+    no_hp: user?.donatur?.no_hp || user?.no_hp || '',
+    email: user?.donatur?.email || user?.email || '',
+  });
   const [selectedJenis, setSelectedJenis] = useState(initialSelectedJenis);
   const [selectedDetail, setSelectedDetail] = useState(initialSelectedDetail);
   const [donationItems, setDonationItems] = useState([]);
@@ -69,17 +127,15 @@ function Transaksi({ user: userProp = null }) {
   const [qrImageCandidates, setQrImageCandidates] = useState([]);
   const [qrImageCandidateIndex, setQrImageCandidateIndex] = useState(0);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const paymentDropdownRef = useRef(null);
 
   const {
-    postDetailTransaksi,
-    loading: loadingCreateDetailTransaksi,
-    error: errorCreateDetailTransaksi,
-  } = usePostDetailTransaksi();
+    postDonatur,
+  } = usePostDonatur();
 
   const {
     postTransaksi,
     loading: loadingTransaksi,
-    error: errorTransaksi,
   } = usePostTransaksi();
 
   const {
@@ -110,14 +166,13 @@ function Transaksi({ user: userProp = null }) {
     return [];
   }, [himpunData]);
 
-  // Normalisasi data users (admin/penghimpun)
-  const usersList = useMemo(() => {
-    if (Array.isArray(usersData?.users)) return usersData.users;
-    if (Array.isArray(usersData)) return usersData;
-    if (Array.isArray(usersData?.data)) return usersData.data;
-    if (usersData && typeof usersData === 'object' && !Array.isArray(usersData)) return Object.values(usersData);
+  const detailHimpunList = useMemo(() => {
+    if (Array.isArray(detailHimpunData?.detail_himpun)) return detailHimpunData.detail_himpun;
+    if (Array.isArray(detailHimpunData)) return detailHimpunData;
+    if (Array.isArray(detailHimpunData?.data)) return detailHimpunData.data;
+    if (Array.isArray(detailHimpunData?.result)) return detailHimpunData.result;
     return [];
-  }, [usersData]);
+  }, [detailHimpunData]);
 
   const jenisDonasiList = useMemo(() => {
     if (Array.isArray(jenisData?.jenis_donasi)) return jenisData.jenis_donasi;
@@ -134,6 +189,120 @@ function Transaksi({ user: userProp = null }) {
     if (Array.isArray(detailData?.result)) return detailData.result;
     return [];
   }, [detailData]);
+
+  const donaturList = useMemo(() => {
+    if (Array.isArray(donaturData?.donatur)) return donaturData.donatur;
+    if (Array.isArray(donaturData)) return donaturData;
+    if (Array.isArray(donaturData?.data)) return donaturData.data;
+    if (Array.isArray(donaturData?.result)) return donaturData.result;
+    return [];
+  }, [donaturData]);
+
+  const getHimpunCode = (item) =>
+    String(
+      item?.kode_himpun ||
+        item?.kode ||
+        item?.kode_himpun_id ||
+        item?.himpun?.kode_himpun ||
+        ''
+    ).trim();
+
+  const getHimpunName = (item) =>
+    normalizeInlineText(
+      item?.nama_himpun ||
+        item?.nama ||
+        item?.himpun?.nama_himpun ||
+        item?.himpun?.nama ||
+        ''
+    );
+
+  const getDetailHimpunCode = (item) =>
+    String(
+      item?.kode_detail_himpun ||
+        item?.kode_detail_himpun_himpun ||
+        item?.kode_detail_transaksi ||
+        item?.kode ||
+        item?.kode_detail ||
+        item?.id ||
+        ''
+    ).trim();
+
+  const getDetailHimpunName = (item) =>
+    normalizeInlineText(item?.nama || item?.nama_detail_himpun || '');
+
+  const selectedHimpun = useMemo(
+    () => himpunList.find((item) => getHimpunCode(item) === selectedHimpunCode) || null,
+    [himpunList, selectedHimpunCode]
+  );
+
+  const filteredPaymentDetails = useMemo(() => {
+    if (!selectedHimpunCode) return [];
+
+    return detailHimpunList.filter((item) => {
+      const itemKodeHimpun = String(
+        item?.kode_himpun ||
+          item?.himpun_kode ||
+          item?.kode_himpun_id ||
+          item?.himpun?.kode_himpun ||
+          ''
+      ).trim();
+
+      return itemKodeHimpun === selectedHimpunCode;
+    });
+  }, [detailHimpunList, selectedHimpunCode]);
+
+  const selectedPaymentDetail = useMemo(
+    () => filteredPaymentDetails.find((item) => getDetailHimpunCode(item) === selectedPaymentDetailCode) || null,
+    [filteredPaymentDetails, selectedPaymentDetailCode]
+  );
+
+  const paymentMethodsWithDetails = useMemo(
+    () =>
+      himpunList.map((item) => {
+        const code = getHimpunCode(item);
+        const details = detailHimpunList.filter((detail) => {
+          const itemKodeHimpun = String(
+            detail?.kode_himpun ||
+              detail?.himpun_kode ||
+              detail?.kode_himpun_id ||
+              detail?.himpun?.kode_himpun ||
+              ''
+          ).trim();
+
+          return itemKodeHimpun === code;
+        });
+
+        return {
+          ...item,
+          code,
+          label: getHimpunName(item) || code,
+          details,
+        };
+      }),
+    [detailHimpunList, himpunList]
+  );
+
+  const isQrisMethod = useMemo(
+    () => normalizeDonationLabel(getHimpunName(selectedHimpun) || metodePembayaran) === 'qris',
+    [metodePembayaran, selectedHimpun]
+  );
+
+  const paymentDropdownLabel = useMemo(() => {
+    if (selectedPaymentDetail) {
+      return `${getHimpunName(selectedHimpun)} - ${getDetailHimpunName(selectedPaymentDetail)}`;
+    }
+
+    if (selectedHimpun) {
+      return getHimpunName(selectedHimpun);
+    }
+
+    return 'Pilih metode pembayaran';
+  }, [selectedHimpun, selectedPaymentDetail]);
+
+  const forcedJenis = useMemo(
+    () => findJenisDonasiByKey(jenisDonasiList, forcedJenisKey),
+    [jenisDonasiList, forcedJenisKey]
+  );
 
   const getDetailIdentity = (detail) =>
     String(
@@ -159,14 +328,14 @@ function Transaksi({ user: userProp = null }) {
       selectedJenis.kode ||
       selectedJenis.kode_jenis;
     const namaJenis = (
-      selectedJenis.nama_donasi ||
-      selectedJenis.nama ||
-      selectedJenis.nama_jenis ||
-      ''
-    )
-      .toString()
-      .trim()
-      .toLowerCase();
+      normalizeDonationLabel(
+        selectedJenis.nama_donasi ||
+        selectedJenis.nama ||
+        selectedJenis.nama_jenis ||
+        ''
+      )
+    );
+    const namaJenisTokens = namaJenis.split(' ').filter(Boolean);
 
     return detailDonasiList.filter((detail) => {
       const matchById =
@@ -177,7 +346,7 @@ function Transaksi({ user: userProp = null }) {
         kodeJenis &&
         (String(detail.kode_jenis_donasi) === String(kodeJenis) ||
           String(detail.kode_jenis) === String(kodeJenis));
-      const detailJenisNama = (
+      const detailJenisNama = normalizeDonationLabel(
         detail.jenis_donasi?.nama_donasi ||
         detail.jenis_donasi?.nama ||
         detail.jenisDonasi?.nama_donasi ||
@@ -185,24 +354,22 @@ function Transaksi({ user: userProp = null }) {
         detail.nama_jenis_donasi ||
         detail.kategori ||
         ''
-      )
-        .toString()
-        .trim()
-        .toLowerCase();
+      );
 
-      const detailNama = (
+      const detailNama = normalizeDonationLabel(
         detail.nama_detail_donasi ||
         detail.nama ||
         ''
-      )
-        .toString()
-        .trim()
-        .toLowerCase();
+      );
 
       const matchByNamaKategori =
         namaJenis &&
-        (detailJenisNama.includes(namaJenis) ||
-          detailNama.includes(namaJenis));
+        (
+          detailJenisNama.includes(namaJenis) ||
+          detailNama.includes(namaJenis) ||
+          namaJenisTokens.some((token) => detailJenisNama.includes(token)) ||
+          namaJenisTokens.some((token) => detailNama.includes(token))
+        );
 
       return matchById || matchByKode || matchByNamaKategori;
     });
@@ -212,37 +379,26 @@ function Transaksi({ user: userProp = null }) {
     loadingJenis ||
     loadingDetail ||
     loadingHimpun ||
-    loadingUsers ||
-    loadingCreateDetailTransaksi ||
-    loadingTransaksi ||
-    loadingQrCode;
+    loadingDetailHimpun;
 
   const error =
     errorJenis ||
     errorDetail ||
     errorHimpun ||
-    errorUsers ||
-    errorCreateDetailTransaksi ||
-    errorTransaksi ||
-    errorQrCode;
+    errorDetailHimpun;
 
   const formatCurrency = (value) => `Rp ${Number(value || 0).toLocaleString('id-ID')}`;
-
-  const totalDonasi = useMemo(
-    () =>
-      donationItems.reduce(
-        (total, item) => total + Number(item.nominal || 0),
-        0
-      ),
-    [donationItems]
-  );
 
   const resetForm = () => {
     setNominal('');
     setMetodePembayaran('');
+    setSelectedHimpunCode('');
+    setSelectedPaymentDetailCode('');
+    setIsPaymentDropdownOpen(false);
+    setExpandedPaymentMethodCode('');
     setCatatanDonatur('');
-    setSelectedJenis(initialSelectedJenis);
-    setSelectedDetail(initialSelectedDetail);
+    setSelectedJenis(forcedJenis || initialSelectedJenis);
+    setSelectedDetail(null);
     setDonationItems([]);
     setSubmitMessage('');
     setSelectedQrCode(null);
@@ -250,6 +406,38 @@ function Transaksi({ user: userProp = null }) {
     setQrImageCandidates([]);
     setQrImageCandidateIndex(0);
   };
+
+  const handleGuestIdentityChange = (e) => {
+    const { name, value } = e.target;
+    setGuestIdentity((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  useEffect(() => {
+    if (forcedJenisKey && forcedJenis) {
+      setSelectedJenis(forcedJenis);
+      setSelectedDetail(null);
+      return;
+    }
+
+    if (!forcedJenisKey && initialSelectedJenis) {
+      setSelectedJenis(initialSelectedJenis);
+      setSelectedDetail(initialSelectedDetail);
+    }
+  }, [forcedJenisKey, forcedJenis, initialSelectedJenis, initialSelectedDetail]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!paymentDropdownRef.current?.contains(event.target)) {
+        setIsPaymentDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const resetAfterSuccess = () => {
     setTimeout(() => {
@@ -627,7 +815,7 @@ function Transaksi({ user: userProp = null }) {
       title: 'Pembayaran QRIS Dikonfirmasi',
       message: 'Pembayaran Anda sedang kami verifikasi. Silakan cek riwayat transaksi untuk status terbaru.',
       userType: 'donatur',
-      audienceKey: createdCheckout.kode_donatur,
+      ...(createdCheckout?.kode_donatur ? { audienceKey: createdCheckout.kode_donatur } : {}),
     });
     addNotification({
       title: 'Konfirmasi Pembayaran dari Donatur',
@@ -637,9 +825,36 @@ function Transaksi({ user: userProp = null }) {
     resetAfterSuccess();
   };
 
-  const handleMetodePembayaranChange = (e) => {
-    const value = e.target.value;
-    setMetodePembayaran(value);
+  const handleSelectPaymentMethod = (methodCode) => {
+    const foundMethod = paymentMethodsWithDetails.find((item) => item.code === methodCode) || null;
+
+    if (!foundMethod) return;
+
+    setSelectedHimpunCode(methodCode);
+    setMetodePembayaran(foundMethod.label);
+
+    if (normalizeDonationLabel(foundMethod.label) === 'qris' || !foundMethod.details.length) {
+      setSelectedPaymentDetailCode('');
+      setExpandedPaymentMethodCode('');
+      setIsPaymentDropdownOpen(false);
+      return;
+    }
+
+    setSelectedPaymentDetailCode('');
+    setExpandedPaymentMethodCode((prev) => (prev === methodCode ? '' : methodCode));
+  };
+
+  const handleSelectPaymentDetail = (methodCode, detailCode) => {
+    const foundMethod = paymentMethodsWithDetails.find((item) => item.code === methodCode) || null;
+    const foundDetail = foundMethod?.details.find((item) => getDetailHimpunCode(item) === detailCode) || null;
+
+    if (!foundMethod || !foundDetail) return;
+
+    setSelectedHimpunCode(methodCode);
+    setMetodePembayaran(foundMethod.label);
+    setSelectedPaymentDetailCode(detailCode);
+    setExpandedPaymentMethodCode(methodCode);
+    setIsPaymentDropdownOpen(false);
   };
 
   const handleJenisChange = (e) => {
@@ -662,8 +877,15 @@ function Transaksi({ user: userProp = null }) {
     setSelectedDetail(foundDetail || null);
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleAddDonationItem = () => {
     setSubmitMessage('');
+
+    // **FITUR BARU: Batasi hanya satu transaksi per session**
+    if (donationItems.length > 0) {
+      setSubmitMessage('❌ Sistem hanya memungkinkan satu transaksi per session. Silakan selesaikan transaksi ini terlebih dahulu sebelum membuat donasi baru.');
+      return;
+    }
 
     if (!selectedJenis) {
       setSubmitMessage('Silakan pilih kategori donasi terlebih dahulu.');
@@ -725,71 +947,270 @@ function Transaksi({ user: userProp = null }) {
     setNominal('');
     setSelectedJenis(initialSelectedJenis);
     setSelectedDetail(initialSelectedDetail);
-    setSubmitMessage('Item donasi ditambahkan ke daftar checkout.');
+    setSubmitMessage('✓ Item donasi ditambahkan. Anda dapat langsung memproses pembayaran.');
   };
 
+  const getCurrentDraftDonationItem = () => {
+    if (!selectedJenis || !selectedDetail || !nominal || Number(nominal) <= 0) {
+      return null;
+    }
+
+    const kodeJenis =
+      selectedJenis.kode_jenis_donasi ||
+      selectedJenis.kode ||
+      selectedJenis.kode_jenis ||
+      '';
+    const kodeDetail =
+      selectedDetail.kode_detail_donasi ||
+      selectedDetail.kode ||
+      selectedDetail.kode_detail ||
+      '';
+
+    return {
+      id: `DIRECT-${Date.now()}`,
+      detail_identity: getDetailIdentity(selectedDetail),
+      kode_jenis_donasi: kodeJenis,
+      kode_detail_donasi: kodeDetail,
+      namaJenis:
+        selectedJenis.nama_donasi ||
+        selectedJenis.nama ||
+        selectedJenis.nama_jenis ||
+        'Kategori Donasi',
+      namaDetail:
+        selectedDetail.nama_detail_donasi ||
+        selectedDetail.nama ||
+        'Program Donasi',
+      nominal: Number(nominal),
+    };
+  };
+
+  // eslint-disable-next-line no-unused-vars
   const handleRemoveDonationItem = (itemId) => {
     setDonationItems((prev) => prev.filter((item) => item.id !== itemId));
+  };
+
+  const ensureGuestDonaturRecord = async (normalizedGuestIdentity, existingKodeDonatur, currentUser) => {
+    if (!isGuest) {
+      return {
+        kodeDonatur: existingKodeDonatur,
+        guestUser: currentUser,
+      };
+    }
+
+    if (existingKodeDonatur && String(existingKodeDonatur).trim()) {
+      return {
+        kodeDonatur: existingKodeDonatur,
+        guestUser: currentUser,
+      };
+    }
+
+    const createdGuestDonatur = await postDonatur(
+      '',
+      normalizedGuestIdentity.nama,
+      '',
+      '',
+      '',
+      normalizedGuestIdentity.jenis_kelamin,
+      '',
+      '',
+      '',
+      '',
+      normalizedGuestIdentity.no_hp,
+      normalizedGuestIdentity.email,
+      '',
+      0
+    );
+
+    if (!createdGuestDonatur) {
+      throw new Error('Gagal membuat data donatur tamu. Silakan periksa koneksi internet dan coba lagi.');
+    }
+
+    const guestDonaturEntity = createdGuestDonatur?.donatur || createdGuestDonatur;
+
+    if (!guestDonaturEntity || typeof guestDonaturEntity !== 'object') {
+      throw new Error('Response data donatur tamu tidak valid. Hubungi admin jika masalah berlanjut.');
+    }
+
+    const kodeDonatur =
+      guestDonaturEntity?.kode_donatur ||
+      guestDonaturEntity?.kode ||
+      '';
+
+    if (!kodeDonatur || kodeDonatur.trim() === '') {
+      console.error('Guest donatur entity structure:', guestDonaturEntity);
+      throw new Error('Kode donatur tamu tidak ditemukan. Backend mungkin belum membuat kode donatur. Silakan coba beberapa saat lagi.');
+    }
+
+    const guestUser = {
+      ...(currentUser?.isGuest ? currentUser : {}),
+      nama: normalizedGuestIdentity.nama,
+      email: normalizedGuestIdentity.email,
+      no_hp: normalizedGuestIdentity.no_hp,
+      jenis_kelamin: normalizedGuestIdentity.jenis_kelamin,
+      isGuest: true,
+      isRegister: 0,
+      is_register: 0,
+    };
+
+    localStorage.setItem('guest_user', JSON.stringify(guestUser));
+
+    return {
+      kodeDonatur,
+      guestUser,
+    };
+  };
+
+  const validateGuestIdentity = (identity) => {
+    if (!identity) return 'Identitas guest belum tersedia.';
+
+    if (!identity.nama || !identity.jenis_kelamin || !identity.no_hp || !identity.email) {
+      return 'Nama, jenis kelamin, nomor HP, dan email guest wajib diisi.';
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(identity.email)) {
+      return 'Format email guest tidak valid.';
+    }
+
+    const phoneRegex = /^(\+62|0)[0-9]{9,12}$/;
+    if (!phoneRegex.test(identity.no_hp.replace(/\s/g, ''))) {
+      return 'Format nomor HP guest tidak valid. Gunakan +62xxx atau 0xxx.';
+    }
+
+    return '';
+  };
+
+  const findRegisteredDonaturCode = (currentUser) => {
+    const directKodeDonatur =
+      currentUser?.donatur?.kode_donatur ||
+      currentUser?.kode_donatur ||
+      currentUser?.kode ||
+      '';
+
+    if (directKodeDonatur) {
+      return directKodeDonatur;
+    }
+
+    const normalizedEmail = String(currentUser?.donatur?.email || currentUser?.email || '')
+      .trim()
+      .toLowerCase();
+    const normalizedPhone = String(
+      currentUser?.donatur?.no_hp ||
+      currentUser?.no_hp ||
+      currentUser?.donatur?.nomor_hp ||
+      ''
+    ).replace(/\s/g, '');
+
+    const matchedDonatur = donaturList.find((item) => {
+      const itemEmail = String(item?.email || '').trim().toLowerCase();
+      const itemPhone = String(item?.no_hp || item?.nomor_hp || item?.phone || '').replace(/\s/g, '');
+
+      return (
+        (normalizedEmail && itemEmail === normalizedEmail) ||
+        (normalizedPhone && itemPhone === normalizedPhone)
+      );
+    });
+
+    return matchedDonatur?.kode_donatur || matchedDonatur?.kode || '';
   };
 
   const handleCreateDetailTransaksi = async (e) => {
     e.preventDefault();
     setSubmitMessage('');
+    const normalizedGuestIdentity = isGuest
+      ? {
+          nama: String(guestIdentity.nama || user?.donatur?.nama || user?.nama || '').trim(),
+          jenis_kelamin: String(guestIdentity.jenis_kelamin || user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '').trim(),
+          no_hp: String(guestIdentity.no_hp || user?.donatur?.no_hp || user?.no_hp || '').trim(),
+          email: String(guestIdentity.email || user?.donatur?.email || user?.email || '').trim(),
+        }
+      : null;
 
     if (!metodePembayaran) {
       setSubmitMessage('Silakan pilih metode/jalur pembayaran.');
       return;
     }
 
-    if (!donationItems.length) {
-      setSubmitMessage('Tambahkan minimal satu item donasi ke daftar checkout terlebih dahulu.');
+    if (!isQrisMethod && !selectedPaymentDetail) {
+      setSubmitMessage('Silakan pilih detail pembayaran terlebih dahulu.');
+      return;
+    }
+
+    const effectiveDonationItems = donationItems.length
+      ? donationItems
+      : (() => {
+          const draftItem = getCurrentDraftDonationItem();
+          return draftItem ? [draftItem] : [];
+        })();
+
+    if (!effectiveDonationItems.length) {
+      setSubmitMessage('Pilih kategori, program, dan nominal donasi terlebih dahulu.');
+      return;
+    }
+
+    // **FITUR BARU: Validasi hanya boleh 1 transaksi per submit**
+    if (effectiveDonationItems.length > 1) {
+      setSubmitMessage('❌ Sistem hanya memungkinkan satu donasi per transaksi. Silakan hapus item tambahan dan coba lagi.');
       return;
     }
 
     try {
-      const defaultHimpun = himpunList[0] || null;
       const kodeHimpun =
-        defaultHimpun?.kode_himpun ||
-        defaultHimpun?.kode ||
-        defaultHimpun?.kode_himpun_id ||
+        getHimpunCode(selectedHimpun) ||
+        selectedHimpunCode ||
         '';
+      const jalurPembayaran = getHimpunName(selectedHimpun) || metodePembayaran;
+      const namaMetodePembayaran = isQrisMethod
+        ? jalurPembayaran
+        : getDetailHimpunName(selectedPaymentDetail);
+      const kodeDetailTransaksi = isQrisMethod
+        ? ''
+        : getDetailHimpunCode(selectedPaymentDetail);
 
-      const kodeDonatur =
-        user?.donatur?.kode_donatur ||
-        user?.kode_donatur ||
-        user?.kode ||
-        '';
+      let kodeDonatur = findRegisteredDonaturCode(user);
+      let effectiveUser = user;
 
-      const matchedUser = usersList.find((u) => {
-        const userKodeHimpun =
-          u.kode_himpun || u.himpun_kode || u.kode_himpun_id;
-        return userKodeHimpun && userKodeHimpun === kodeHimpun;
-      });
+      const isRegisterFlag =
+        user?.donatur?.isRegister ??
+        user?.donatur?.is_register ??
+        user?.isRegister ??
+        user?.is_register ??
+        (isGuest ? 0 : 1);
 
-      const kodeUser =
-        matchedUser?.kode_user ||
-        matchedUser?.kode ||
-        matchedUser?.id ||
-        '';
+      const finalCatatanDonatur = String(catatanDonatur || '').trim();
+      const kodeUser = '';
+
+      if (isGuest) {
+        const guestValidationError = validateGuestIdentity(normalizedGuestIdentity);
+        if (guestValidationError) {
+          setSubmitMessage(guestValidationError);
+          return;
+        }
+
+        const guestDonaturResult = await ensureGuestDonaturRecord(
+          normalizedGuestIdentity,
+          kodeDonatur,
+          user
+        );
+
+        kodeDonatur = guestDonaturResult?.kodeDonatur || '';
+        effectiveUser = guestDonaturResult?.guestUser || user;
+
+        if (!kodeDonatur || !String(kodeDonatur).trim()) {
+          throw new Error('Data donatur guest belum berhasil dibuat, jadi transaksi tidak dapat dilanjutkan.');
+        }
+      }
+
+      if (!kodeDonatur) {
+        throw new Error('Kode donatur tidak ditemukan. Silakan login ulang atau lengkapi identitas guest terlebih dahulu.');
+      }
 
       const createdTransactions = [];
 
-      for (const item of donationItems) {
-        const kodeDetailTransaksi = `DT-${Date.now()}-${createdTransactions.length + 1}`;
-        const detailResponse = await postDetailTransaksi(
-          kodeDetailTransaksi,
-          metodePembayaran,
-          kodeHimpun
-        );
+      // **FITUR BARU: Restrict ke hanya 1 transaksi per session**
+      const itemsToProcess = effectiveDonationItems.slice(0, 1); // Ambil maksimal 1 item pertama
 
-        if (!detailResponse) {
-          throw new Error('Gagal membuat detail transaksi.');
-        }
-
-        const detailEntity = detailResponse.detail_transaksi || detailResponse;
-        const finalKodeDetailTransaksi =
-          detailEntity.kode_detail_transaksi || kodeDetailTransaksi;
-        const detailTransaksiId = detailEntity.id;
+      for (const item of itemsToProcess) {
         const kodeTransaksi = `TRX-${Date.now()}-${createdTransactions.length + 1}`;
 
         const transaksiResponse = await postTransaksi(
@@ -799,20 +1220,35 @@ function Transaksi({ user: userProp = null }) {
           item.kode_detail_donasi,
           kodeUser,
           kodeHimpun,
-          finalKodeDetailTransaksi,
+          kodeDetailTransaksi,
           item.nominal,
           'pending',
-          catatanDonatur
+          finalCatatanDonatur,
+          isRegisterFlag,
+          namaMetodePembayaran,
+          jalurPembayaran
         );
-
-        if (!transaksiResponse) {
-          throw new Error('Gagal membuat transaksi utama.');
-        }
 
         const transaksiData = transaksiResponse.transaksi || transaksiResponse;
         createdTransactions.push({
           ...transaksiData,
-          detail_transaksi_id: detailTransaksiId,
+          detail_transaksi_id: null,
+          kode_detail_transaksi: transaksiData.kode_detail_transaksi || kodeDetailTransaksi,
+          metode_pembayaran:
+            transaksiData.metode_pembayaran ||
+            transaksiData.metode ||
+            transaksiData.jalur_pembayaran ||
+            transaksiData.nama_detail_transaksi ||
+            namaMetodePembayaran,
+          jalur_pembayaran:
+            transaksiData.jalur_pembayaran ||
+            jalurPembayaran,
+          nama_detail_transaksi:
+            transaksiData.nama_detail_transaksi ||
+            transaksiData.metode_pembayaran ||
+            transaksiData.metode ||
+            transaksiData.jalur_pembayaran ||
+            namaMetodePembayaran,
           nama_jenis_donasi: item.namaJenis,
           nama_detail_donasi: item.namaDetail,
           jumlah_donasi: Number(item.nominal || 0),
@@ -820,6 +1256,7 @@ function Transaksi({ user: userProp = null }) {
       }
 
       if (createdTransactions.length) {
+
         const checkoutSummary = {
           transactions: createdTransactions,
           total_donasi: createdTransactions.reduce(
@@ -827,7 +1264,8 @@ function Transaksi({ user: userProp = null }) {
             0
           ),
           total_item: createdTransactions.length,
-          metode_pembayaran: metodePembayaran,
+          metode_pembayaran: namaMetodePembayaran,
+          jalur_pembayaran: jalurPembayaran,
           status: 'pending',
           kode_donatur: kodeDonatur,
         };
@@ -835,11 +1273,11 @@ function Transaksi({ user: userProp = null }) {
         setCreatedCheckout(checkoutSummary);
         addNotification({
           title: 'Donasi Baru Masuk',
-          message: `Ada ${createdTransactions.length} transaksi donasi baru dari ${user?.donatur?.nama || user?.nama || 'donatur'} dengan total ${formatCurrency(checkoutSummary.total_donasi)}.`,
+          message: `Ada ${createdTransactions.length} transaksi donasi baru dari ${isGuest ? normalizedGuestIdentity.nama : effectiveUser?.donatur?.nama || effectiveUser?.nama || 'donatur'} dengan total ${formatCurrency(checkoutSummary.total_donasi)}.`,
           userType: 'admin',
         });
 
-        if (metodePembayaran === 'QRIS') {
+        if (isQrisMethod) {
             console.log('=== QR Code Data (from /api/qrcode/active) ===');
             console.log('qrCodeData:', qrCodeData);
             console.log('qrCodeData JSON:', JSON.stringify(qrCodeData, null, 2));
@@ -980,46 +1418,7 @@ function Transaksi({ user: userProp = null }) {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-100 py-10 px-6 lg:px-16">
       <div className="w-full space-y-8">
 
-        {/* Hero Section */}
-        <div className="relative overflow-hidden rounded-[32px] border border-slate-800 bg-slate-900 p-8 md:p-10 text-white shadow-xl">
-          <div className="absolute inset-0 bg-black/10"></div>
-          <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
-            <div className="flex-1">
-              <p className="text-sm uppercase tracking-widest opacity-80 mb-2">
-                Zakat & Donasi • MPZ DT
-              </p>
-              <h1 className="text-3xl md:text-4xl font-semibold mb-4">
-                Buat donasi dengan alur yang lebih mudah dipahami
-              </h1>
-              <p className="mb-6 max-w-2xl text-sm leading-7 text-slate-300 md:text-base">
-                Pilih program, tambahkan item ke daftar donasi, lalu selesaikan checkout sekali saja.
-                Semua dirapikan agar proses donasi terasa lebih jelas dan nyaman.
-              </p>
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2">
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Aman & Terpercaya
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2">
-                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Transparan
-                </div>
-              </div>
-            </div>
-            <div className="flex-shrink-0">
-              <div className="flex h-28 w-28 items-center justify-center rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-sm">
-                <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-
+       
         {/* Form Pembayaran */}
         {!createdCheckout && (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 md:p-8">
@@ -1032,20 +1431,73 @@ function Transaksi({ user: userProp = null }) {
             <h2 className="text-xl font-semibold text-slate-800">Detail Pembayaran</h2>
           </div>
 
-          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-            <p className="text-sm font-semibold text-slate-900">Cara berdonasi lebih dari satu item</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Jika Anda ingin berdonasi lebih dari satu jenis, pilih satu item donasi terlebih dahulu,
-              isi nominalnya, lalu klik <span className="font-semibold text-amber-700">Tambah ke Daftar</span>.
-              Setelah itu Anda bisa memilih item lain lagi. Semua item akan muncul di daftar donasi dan
-              dibayar sekaligus saat checkout.
-            </p>
-          </div>
-
           <form
             className="grid grid-cols-1 md:grid-cols-2 gap-6"
             onSubmit={handleCreateDetailTransaksi}
           >
+            {isGuest && (
+              <div className="md:col-span-2 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+                <div className="mb-4">
+                  <p className="text-sm font-bold text-slate-900">Identitas Tamu</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Karena Anda berdonasi sebagai tamu, lengkapi identitas singkat berikut sebelum melanjutkan donasi.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Nama</label>
+                    <input
+                      type="text"
+                      name="nama"
+                      value={guestIdentity.nama}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Masukkan nama lengkap"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Jenis Kelamin</label>
+                    <select
+                      name="jenis_kelamin"
+                      value={guestIdentity.jenis_kelamin}
+                      onChange={handleGuestIdentityChange}
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Pilih jenis kelamin</option>
+                      <option value="Laki-laki">Laki-laki</option>
+                      <option value="Perempuan">Perempuan</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Nomor HP</label>
+                    <input
+                      type="tel"
+                      name="no_hp"
+                      value={guestIdentity.no_hp}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Contoh: 08123456789"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Email</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={guestIdentity.email}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Masukkan email aktif"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               <label className="flex items-center gap-2 text-sm font-bold text-slate-800">
                 <svg className="w-4 h-4 text-blue-600 bg-blue-100 p-1 rounded-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1056,6 +1508,7 @@ function Transaksi({ user: userProp = null }) {
               <select
                 value={selectedJenis ? (selectedJenis.kode_jenis_donasi || selectedJenis.kode || selectedJenis.kode_jenis || '') : ''}
                 onChange={handleJenisChange}
+                disabled={Boolean(forcedJenisKey)}
                 className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-slate-400 transition-all duration-200 font-semibold"
               >
                 <option value="">Pilih kategori donasi</option>
@@ -1068,7 +1521,11 @@ function Transaksi({ user: userProp = null }) {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-slate-500 font-medium">Pilih salah satu kategori: zakat, infaq, wakaf, atau kategori lain yang tersedia.</p>
+              <p className="text-xs text-slate-500 font-medium">
+                {forcedJenisKey
+                  ? 'Kategori mengikuti menu donasi yang sedang Anda buka.'
+                  : 'Pilih salah satu kategori: zakat, infaq, wakaf, atau kategori lain yang tersedia.'}
+              </p>
             </div>
 
             <div className="space-y-3">
@@ -1094,7 +1551,6 @@ function Transaksi({ user: userProp = null }) {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-slate-500 font-medium">Detail akan menyesuaikan kategori yang Anda pilih.</p>
             </div>
 
             {/* Nominal */}
@@ -1131,25 +1587,91 @@ function Transaksi({ user: userProp = null }) {
             </div>
 
             {/* Metode */}
-            <div className="space-y-3">
+            <div className="space-y-3" ref={paymentDropdownRef}>
               <label className="flex items-center gap-2 text-sm font-bold text-slate-800">
                 <svg className="w-4 h-4 text-blue-600 bg-blue-100 p-1 rounded-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                 </svg>
                 Metode Pembayaran
               </label>
-              <select
-                value={metodePembayaran}
-                onChange={handleMetodePembayaranChange}
-                className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-slate-400 transition-all duration-200 font-semibold"
+              <button
+                type="button"
+                onClick={() => setIsPaymentDropdownOpen((prev) => !prev)}
+                className="flex w-full items-center justify-between rounded-xl border-2 border-slate-300 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 transition-all duration-200 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">Pilih metode pembayaran</option>
-                <option value="Front Office">🏪 Front Office</option>
-                <option value="PIC">👤 PIC</option>
-                <option value="Transfer">🏦 Transfer Bank</option>
-                <option value="QRIS">💳 QRIS (E-Wallet)</option>
-              </select>
-              <p className="text-xs text-slate-500 font-medium">Pilih metode pembayaran yang paling nyaman untuk Anda.</p>
+                <span className={selectedHimpunCode ? 'text-slate-800' : 'text-slate-400'}>
+                  {paymentDropdownLabel}
+                </span>
+                <svg
+                  className={`h-4 w-4 text-slate-500 transition-transform duration-200 ${isPaymentDropdownOpen ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {isPaymentDropdownOpen && (
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                  {paymentMethodsWithDetails.map((method) => {
+                    const isExpanded = expandedPaymentMethodCode === method.code;
+                    const isSelectedMethod = selectedHimpunCode === method.code;
+                    const hasDetails = method.details.length > 0;
+                    const methodIsQris = normalizeDonationLabel(method.label) === 'qris';
+
+                    return (
+                      <div key={method.code} className="border-b border-slate-100 last:border-b-0">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPaymentMethod(method.code)}
+                          className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors ${
+                            isSelectedMethod ? 'bg-blue-50 text-blue-900' : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="font-semibold">{method.label}</span>
+                          {hasDetails && !methodIsQris ? (
+                            <svg
+                              className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          ) : (
+                            <span className="text-xs font-medium text-slate-400">Pilih</span>
+                          )}
+                        </button>
+
+                        {hasDetails && !methodIsQris && isExpanded && (
+                          <div className="border-t border-slate-100 bg-slate-50 px-2 py-2">
+                            {method.details.map((detail) => {
+                              const detailCode = getDetailHimpunCode(detail);
+                              const isSelectedDetail = selectedPaymentDetailCode === detailCode && selectedHimpunCode === method.code;
+
+                              return (
+                                <button
+                                  key={detailCode}
+                                  type="button"
+                                  onClick={() => handleSelectPaymentDetail(method.code, detailCode)}
+                                  className={`mb-1 flex w-full items-center rounded-xl px-3 py-2 text-left text-sm last:mb-0 ${
+                                    isSelectedDetail
+                                      ? 'bg-blue-600 text-white'
+                                      : 'text-slate-700 hover:bg-white'
+                                  }`}
+                                >
+                                  {getDetailHimpunName(detail)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="md:col-span-2 space-y-3">
@@ -1166,93 +1688,19 @@ function Transaksi({ user: userProp = null }) {
                 placeholder="Tulis catatan atau pesan singkat untuk donasi ini"
                 className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-slate-400 transition-all duration-200 resize-none"
               />
-              <p className="text-xs text-slate-500 font-medium">Pesan ini akan ikut disimpan bersama data transaksi donasi Anda.</p>
-            </div>
-
-            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">Daftar donasi Anda</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Setiap item yang Anda tambahkan akan muncul di sini dan dihitung ke total checkout.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddDonationItem}
-                  className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-amber-400"
-                >
-                  Tambah ke Daftar
-                </button>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {!donationItems.length ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-500">
-                        Belum ada item donasi. Pilih kategori, program, dan nominal, lalu klik `Tambah ke Daftar`.
-                        Jika ingin berdonasi lebih dari satu jenis, ulangi langkah yang sama untuk item berikutnya.
-                  </div>
-                ) : (
-                  donationItems.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {index + 1}. {item.namaDetail}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">{item.namaJenis}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <p className="text-sm font-bold text-blue-700">
-                          {formatCurrency(item.nominal)}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveDonationItem(item.id)}
-                          className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-                        >
-                          Hapus
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="mt-5 grid gap-3 border-t border-slate-200 pt-4 md:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Jumlah Item</p>
-                  <p className="mt-2 text-lg font-bold text-slate-900">{donationItems.length}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Metode</p>
-                  <p className="mt-2 text-lg font-bold text-slate-900">{metodePembayaran || '-'}</p>
-                </div>
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-amber-700">Total Donasi</p>
-                  <p className="mt-2 text-lg font-bold text-amber-700">{formatCurrency(totalDonasi)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4">
-                <p className="text-sm font-semibold text-slate-900">Ringkasan checkout</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Semua item dalam daftar ini akan diproses dalam satu checkout. Total yang dibayar
-                  donatur adalah <span className="font-semibold text-blue-700">{formatCurrency(totalDonasi)}</span>.
-                </p>
-              </div>
             </div>
 
             {/* Button */}
             <div className="md:col-span-2 pt-6 border-t border-slate-200">
               <button
                 type="submit"
-                disabled={loadingCreateDetailTransaksi || loadingTransaksi || !donationItems.length}
+                disabled={
+                  loadingTransaksi ||
+                  (!donationItems.length && !getCurrentDraftDonationItem())
+                }
                 className="w-full px-8 py-4 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-bold shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-[1.01] disabled:transform-none disabled:opacity-50 border border-blue-500 hover:border-blue-600"
               >
-                {loadingCreateDetailTransaksi || loadingTransaksi ? (
+                {loadingTransaksi ? (
                   <div className="flex items-center justify-center gap-3">
                     <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
                     <span>Memproses Pembayaran...</span>
@@ -1262,7 +1710,7 @@ function Transaksi({ user: userProp = null }) {
                     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                     </svg>
-                    <span>Proses Semua Donasi</span>
+                    <span>Proses Donasi Sekarang</span>
                   </div>
                 )}
               </button>
@@ -1286,32 +1734,31 @@ function Transaksi({ user: userProp = null }) {
             </div>
             <div>
               <h2 className="text-xl font-semibold text-slate-800">Panduan Singkat</h2>
-              <p className="text-sm text-slate-600">Petunjuk ringkas agar donatur tidak bingung saat menambahkan satu atau beberapa item donasi.</p>
+              <p className="text-sm text-slate-600">Petunjuk cara melakukan donasi (satu transaksi per session)</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <p className="text-sm font-bold text-slate-900">1. Untuk satu donasi</p>
+              <p className="text-sm font-bold text-slate-900">1. Pilih Kategori & Program Donasi</p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Pilih kategori, pilih program, isi nominal, lalu klik `Tambah ke Daftar`. Setelah item muncul di daftar,
-                Anda bisa langsung checkout.
+                Pilih jenis donasi (Zakat, Infak, dll), kemudian pilih program yang sesuai dengan kategori yang dipilih.
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <p className="text-sm font-bold text-slate-900">2. Untuk lebih dari satu donasi</p>
+              <p className="text-sm font-bold text-slate-900">2. Isi Nominal & Metode Pembayaran</p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Setelah item pertama masuk ke daftar, ulangi lagi langkah yang sama untuk item kedua, ketiga, dan seterusnya.
-                Total pembayaran akan dijumlahkan otomatis dari semua item di daftar.
+                Masukkan jumlah yang ingin didonasikan, pilih metode pembayaran dari data himpun, 
+                kemudian klik tombol <span className="font-semibold">Proses Donasi Sekarang</span>.
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <p className="text-sm font-bold text-slate-900">3. Setelah checkout</p>
+              <p className="text-sm font-bold text-slate-900">3. Selesaikan Pembayaran</p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Status awal transaksi adalah `pending`. Jika memakai QRIS, selesaikan pembayaran lalu lakukan konfirmasi.
-                Jika belum sempat membayar, Anda bisa melanjutkannya lagi lewat riwayat transaksi.
+                Ikuti instruksi pembayaran sesuai metode yang dipilih. Status awal transaksi adalah `pending`. 
+                Untuk QRIS, scan QR code dan konfirmasi pembayaran. Verifikasi biasanya selesai dalam 5-10 menit.
               </p>
             </div>
           </div>
@@ -1372,7 +1819,7 @@ function Transaksi({ user: userProp = null }) {
               </div>
             </div>
 
-            {metodePembayaran === 'QRIS' && (
+            {isQrisMethod && (
               <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-2xl p-6 mb-8">
                 <div className="flex items-start gap-3">
                   <svg className="w-6 h-6 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

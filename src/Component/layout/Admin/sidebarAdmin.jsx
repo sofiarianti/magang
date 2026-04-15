@@ -2,15 +2,20 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   FiCreditCard,
+  FiDollarSign,
   FiFileText,
   FiGrid,
   FiInfo,
+  FiShield,
   FiUsers,
 } from 'react-icons/fi';
+import { isRoleAllowed, resolveAdminRole } from './roleAdmin';
 
-function SidebarAdmin({ isOpen = true, children }) {
+function SidebarAdmin({ isOpen = true, children, admin }) {
   const location = useLocation();
   const [openDropdown, setOpenDropdown] = useState(null);
+  const role = resolveAdminRole(admin);
+  const canRegisterAdmin = isRoleAllowed(role, ['super_admin']);
 
   const toggleDropdown = (key) => {
     setOpenDropdown((prev) => (prev === key ? null : key));
@@ -32,18 +37,13 @@ function SidebarAdmin({ isOpen = true, children }) {
       return;
     }
 
-    if (isActivePath(['/laporan/donasi', '/transaksi/qrcode'])) {
+    if (isActivePath(['/laporan/donasi', '/transaksi/qrcode', '/admin/input-transaksi'])) {
       setOpenDropdown('transaksi');
       return;
     }
 
     if (isActivePath(['/penyaluran/list', '/penyaluran/penerima-manfaat'])) {
       setOpenDropdown('penyaluran');
-      return;
-    }
-
-    if (isActivePath(['/laporan/donasi', '/laporan/penyaluran', '/laporan/transaksi'])) {
-      setOpenDropdown('laporan');
       return;
     }
 
@@ -120,7 +120,7 @@ function SidebarAdmin({ isOpen = true, children }) {
                   </span>
                   <span>Donatur</span>
                 </div>
-                <span className="text-[10px]">{openDropdown === 'donatur' ? '▾' : '▸'}</span>
+                <span className="text-[10px]">{openDropdown === 'donatur' ? '?' : '?'}</span>
               </button>
               {openDropdown === 'donatur' && (
                 <div className="mt-1 ml-9 space-y-1">
@@ -135,7 +135,7 @@ function SidebarAdmin({ isOpen = true, children }) {
                 type="button"
                 onClick={() => toggleDropdown('transaksi')}
                 className={`${baseItemClasses} w-full justify-between ${
-                  isActivePath(['/laporan/donasi', '/transaksi/qrcode'])
+                  isActivePath(['/laporan/donasi', '/transaksi/qrcode', '/admin/input-transaksi'])
                     ? 'bg-blue-50 text-blue-900'
                     : 'text-slate-600 hover:bg-slate-50'
                 }`}
@@ -143,24 +143,34 @@ function SidebarAdmin({ isOpen = true, children }) {
                 <div className="flex items-center gap-2">
                   <span
                     className={`${iconClasses} ${
-                      isActivePath(['/laporan/donasi', '/transaksi/qrcode'])
+                      isActivePath(['/laporan/donasi', '/transaksi/qrcode', '/admin/input-transaksi'])
                         ? 'bg-blue-100 text-blue-900'
                         : 'bg-slate-100 text-slate-500'
                     }`}
                   >
                     <FiCreditCard />
                   </span>
-                  <span>Transaksi</span>
+                  <span>Donasi</span>
                 </div>
-                <span className="text-[10px]">{openDropdown === 'transaksi' ? '▾' : '▸'}</span>
+                <span className="text-[10px]">{openDropdown === 'transaksi' ? '▲' : '▼'}</span>
               </button>
               {openDropdown === 'transaksi' && (
                 <div className="mt-1 ml-9 space-y-1">
+                  <Link to="/admin/input-transaksi" className={`block px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${location.pathname.startsWith('/admin/input-transaksi') ? 'bg-blue-50 text-blue-900' : 'text-slate-500 hover:bg-slate-50'}`}>Input Transaksi</Link>
                   <Link to="/laporan/donasi" className={`block px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${location.pathname.startsWith('/laporan/donasi') ? 'bg-blue-50 text-blue-900' : 'text-slate-500 hover:bg-slate-50'}`}>Laporan Donasi</Link>
                   <Link to="/transaksi/qrcode" className={`block px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${location.pathname.startsWith('/transaksi/qrcode') ? 'bg-blue-50 text-blue-900' : 'text-slate-500 hover:bg-slate-50'}`}>QR Code</Link>
                 </div>
               )}
             </div>
+
+            {canRegisterAdmin && (
+              <Link to="/admin/registrasi" className={`${baseItemClasses} ${location.pathname.startsWith('/admin/registrasi') ? 'bg-indigo-50 text-indigo-800' : 'text-slate-600 hover:bg-slate-50'}`}>
+                <span className={`${iconClasses} ${location.pathname.startsWith('/admin/registrasi') ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                  <FiShield />
+                </span>
+                <span className="truncate">Registrasi Admin</span>
+              </Link>
+            )}
 
             <div>
               <button
@@ -184,7 +194,7 @@ function SidebarAdmin({ isOpen = true, children }) {
                   </span>
                   <span>Penyaluran</span>
                 </div>
-                <span className="text-[10px]">{openDropdown === 'penyaluran' ? '▾' : '▸'}</span>
+                <span className="text-[10px]">{openDropdown === 'penyaluran' ? '?' : '?'}</span>
               </button>
               {openDropdown === 'penyaluran' && (
                 <div className="mt-1 ml-9 space-y-1">
@@ -193,6 +203,7 @@ function SidebarAdmin({ isOpen = true, children }) {
                 </div>
               )}
             </div>
+
             <Link to="/manajemen-konten" className={`${baseItemClasses} ${location.pathname.startsWith('/manajemen-konten') ? 'bg-blue-50 text-blue-900' : 'text-slate-600 hover:bg-slate-50'}`}>
               <span className={`${iconClasses} ${location.pathname.startsWith('/manajemen-konten') ? 'bg-blue-100 text-blue-900' : 'bg-slate-100 text-slate-500'}`}>
                 <FiFileText />

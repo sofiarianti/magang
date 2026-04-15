@@ -10,30 +10,33 @@ const usePostUser = () => {
   const [error, setError] = useState(null);
 
   /**
-   * Fungsi untuk mengirim data ke backend.
-   * @param { string } kode_user 
-   * @param { string } nama_user 
-   * @param { string } kode_himpunan 
+   * Fungsi untuk mengirim data user ke backend.
+   * @param { string } kode_user
+   * @param { string } nama_user
+   * @param { string } kode_himpun
    * @param { string } email
    * @param { string } password
-   * @returns { Promise<Object> } - Mengembalikan data respons dari backend atau error.
+   * @param { string } role
+   * @returns { Promise<Object> } - Mengembalikan data respons dari backend atau null saat error.
    */
-  const postUser = async (kode_user, nama_user, kode_himpunan, email, password) => {
+  const postUser = async (kode_user, nama_user, kode_himpun, email, password, role) => {
     setLoading(true);
     setError(null);
+
     try {
       const response = await api.post(endpoints.users.create, {
         kode_user,
         nama_user,
-        kode_himpunan,
+        kode_himpun,
         email,
         password,
+        role,
       });
 
       return response.data;
     } catch (err) {
       console.error('Error posting user:', err);
-      setError(err.response?.data?.error || 'Terjadi kesalahan saat memposting user.');
+      setError(err.response?.data?.error || err.message || 'Terjadi kesalahan saat memposting user.');
       return null;
     } finally {
       setLoading(false);

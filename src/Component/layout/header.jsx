@@ -34,12 +34,13 @@ function findFieldDeep(obj, fieldNames) {
   return null;
 }
 
-function Header({ user, admin, onLogout, onToggleSidebar }) {
+function Header({ user, admin, onLogout, onToggleSidebar, onGuestLoginRequest }) {
   const navigate = useNavigate();
 
   // Tentukan user type berdasarkan params yang diterima (user param bisa berisi donatur atau admin)
   const userType = admin ? 'admin' : (user?.admin_id ? 'admin' : 'donatur');
   const currentUser = admin || user;
+  const isGuest = Boolean(currentUser?.isGuest);
   
   // Normalisasi data user/admin supaya kompatibel untuk donatur & admin
   const displayName =
@@ -138,7 +139,7 @@ function Header({ user, admin, onLogout, onToggleSidebar }) {
 
         {/* Right: user info + logout */}
         <div className="flex items-center gap-4">
-          {currentUser && (
+          {currentUser && !isGuest && (
             <button
               type="button"
               onClick={() => navigate('/notifikasi')}
@@ -163,7 +164,7 @@ function Header({ user, admin, onLogout, onToggleSidebar }) {
             </button>
           )}
 
-          {currentUser && (
+          {currentUser && !isGuest && (
             <Link
               to="/profil"
               className="flex items-center gap-3 rounded-full px-3 py-1.5 hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-200"
@@ -188,14 +189,23 @@ function Header({ user, admin, onLogout, onToggleSidebar }) {
                 </span>
               </div>
             </Link>
+          )}          {isGuest ? (
+            <button
+              type="button"
+              onClick={onGuestLoginRequest}
+              className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-medium shadow-sm transition-colors"
+            >
+              Login / Registrasi
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-medium shadow-sm transition-colors"
+            >
+              Logout
+            </button>
           )}
-          <button
-            type="button"
-            onClick={() => setShowLogoutConfirm(true)}
-            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-medium shadow-sm transition-colors"
-          >
-            Logout
-          </button>
         </div>
       </div>
 
@@ -282,3 +292,8 @@ function Header({ user, admin, onLogout, onToggleSidebar }) {
 }
 
 export default Header;
+
+
+
+
+

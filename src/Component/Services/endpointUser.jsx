@@ -38,6 +38,16 @@ const endpointsUser = {
       delete: (id) => `/api/himpun/delete/${id}`,
     },
 
+    detail_himpun: {
+      getAll: '/api/detail-himpun',
+      getById: (id) => `/api/detail-himpun/get/${id}`,
+      getByHimpun: (kode_himpun) => `/api/detail-himpun/by-himpun/${kode_himpun}`,
+      create: '/api/detail-himpun/insert',
+      login: '/api/detail-himpun/login',
+      update: (id) => `/api/detail-himpun/update/${id}`,
+      delete: (id) => `/api/detail-himpun/delete/${id}`,
+    },
+
     infak_terikat: {
       getAll: '/api/infak-terikat',
       getById: (id) => `/api/infak-terikat/get/${id}`,

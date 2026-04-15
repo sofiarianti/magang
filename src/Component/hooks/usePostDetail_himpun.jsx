@@ -1,37 +1,39 @@
+// src/Component/hooks/usePostDetailHimpun.jsx
 import { useState } from 'react';
 import api from '../Services/api';
 import endpoints from '../Services/endpointUser';
 
 /**
- * @returns { Object } - Mengembalikan fungsi postDetailTransaksi, serta status loading dan error.
+ * @returns { Object } - Mengembalikan fungsi postDetailHimpun, serta status loading dan error.
  */
-const usePostDetailTransaksi = () => {
+const usePostDetailHimpun = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   /**
    * Fungsi untuk mengirim data ke backend.
-   * @param { string } kode_detail_transaksi 
+   * @param { string } kode_detail_himpun 
    * @param { string } nama 
    * @param { string } kode_himpun 
    * @returns { Promise<Object> } - Mengembalikan data respons dari backend atau error.
    */
-  const postDetailTransaksi = async (kode_detail_transaksi, nama, kode_himpun) => {
+  const postDetailHimpun = async (kode_detail_himpun, nama, kode_himpun) => {
     setLoading(true);
     setError(null);
 
     try {
       const data = {
-        kode_detail_transaksi,
+        kode_detail_himpun,
         nama,
         kode_himpun,
       };
+
       const candidateEndpoints = [
-        endpoints.detail_transaksi?.create,
-        '/api/detail_transaksi/insert',
-        '/api/detail-transaksi/insert',
-        '/api/detail_transaksi',
-        '/api/detail-transaksi',
+        endpoints.detail_himpun?.create,
+        '/api/detail_himpun/insert',
+        '/api/detail-himpun/insert',
+        '/api/detail_himpun',
+        '/api/detail-himpun',
       ].filter(Boolean);
 
       let lastError = null;
@@ -54,17 +56,20 @@ const usePostDetailTransaksi = () => {
         }
       }
 
-      throw lastError || new Error('Endpoint detail transaksi tidak ditemukan.');
+      throw lastError || new Error('Endpoint detail himpun tidak ditemukan.');
     } catch (err) {
       console.error('Error uploading data:', err);
-      setError(err.response?.data?.error || 'Terjadi kesalahan saat mengupload data.');
+      setError(
+        err.response?.data?.error ||
+        'Terjadi kesalahan saat mengupload data.'
+      );
       return null;
     } finally {
       setLoading(false);
     }
   };
 
-  return { postDetailTransaksi, loading, error };
+  return { postDetailHimpun, loading, error };
 };
 
-export default usePostDetailTransaksi;
+export default usePostDetailHimpun;

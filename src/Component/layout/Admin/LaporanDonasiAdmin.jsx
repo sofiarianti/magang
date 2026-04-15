@@ -3,9 +3,33 @@ import useAPI from '../../hooks/useAPI';
 import usePutTransaksi from '../../hooks/useUpdateTransaksi';
 import endpointsUser from '../../Services/endpointUser';
 import { addNotification } from '../../Services/notifikasi';
-import { exportRowsToExcel, exportRowsToPdf, isWithinDateRange } from './exportUtils';
+import { exportRowsToExcel, exportRowsToPdf, isWithinDateRange } from './exportUtilsAdmin';
 
-function LaporanDonasiAdmin() {
+function normalizeValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function findFieldDeep(obj, fieldNames) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (!Array.isArray(fieldNames)) fieldNames = [fieldNames];
+
+  for (const key of fieldNames) {
+    if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key]) {
+      return obj[key];
+    }
+  }
+
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object') {
+      const result = findFieldDeep(value, fieldNames);
+      if (result) return result;
+    }
+  }
+
+  return null;
+}
+
+function LaporanDonasiAdmin({ admin }) {
   const { data: transaksiData, loading, error, refetch } = useAPI('/api/transaksi');
   const { data: jenisDonasiData } = useAPI(endpointsUser.jenis_donasi.getAll);
   const { putTransaksi, loading: updating, error: updateError } = usePutTransaksi();
@@ -17,6 +41,8 @@ function LaporanDonasiAdmin() {
   const [actionMessage, setActionMessage] = useState('');
   const [activeId, setActiveId] = useState(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const adminKodeUser = String(findFieldDeep(admin, ['kode_user', 'kodeUser']) || '').trim();
+  const adminDisplayName = findFieldDeep(admin, ['nama_user', 'nama', 'name', 'username']) || 'Admin';
 
   const transaksiList = useMemo(() => {
     if (Array.isArray(transaksiData)) return transaksiData;
@@ -65,33 +91,35 @@ function LaporanDonasiAdmin() {
 
   const getJenisMeta = useCallback((trx) => {
     const kodeJenis =
-      trx.kode_jenis_donasi ||
-      trx.jenis_donasi?.kode_jenis_donasi ||
-      trx.jenisDonasi?.kode_jenis_donasi ||
-      trx.jenis_donasi?.kode ||
-      trx.jenisDonasi?.kode ||
-      trx.kode_jenis ||
+      trx?.kode_jenis_donasi ||
+      trx?.kodeJenisDonasi ||
+      trx?.jenis_donasi?.kode_jenis_donasi ||
+      trx?.jenisDonasi?.kode_jenis_donasi ||
+      trx?.jenis_donasi?.kode ||
+      trx?.jenisDonasi?.kode ||
+      trx?.kode_jenis ||
       '';
 
     const matchedJenis = jenisDonasiList.find((item) => {
       const itemKode =
-        item.kode_jenis_donasi ||
-        item.kode ||
-        item.kode_jenis ||
-        item.id_jenis_donasi ||
-        item.id;
+        item?.kode_jenis_donasi ||
+        item?.kodeJenisDonasi ||
+        item?.kode ||
+        item?.kode_jenis ||
+        '';
 
-      return String(itemKode) === String(kodeJenis);
+      return normalizeValue(itemKode) === normalizeValue(kodeJenis);
     });
 
     const namaJenis =
+      trx.jenisDonasi?.nama_donasi ||
+      trx.jenis_donasi?.nama_donasi ||
       matchedJenis?.nama_donasi ||
+      matchedJenis?.namaDonasi ||
+      trx.jenisDonasi?.nama ||
+      trx.jenis_donasi?.nama ||
       matchedJenis?.nama ||
       matchedJenis?.nama_jenis ||
-      trx.jenis_donasi?.nama_donasi ||
-      trx.jenis_donasi?.nama ||
-      trx.jenisDonasi?.nama_donasi ||
-      trx.jenisDonasi?.nama ||
       trx.nama_jenis_donasi ||
       'Donasi Lainnya';
 
@@ -131,14 +159,38 @@ function LaporanDonasiAdmin() {
     trx.nama_detail_donasi ||
     '-';
 
-  const getMetodeDisplay = (trx) =>
-    trx.detailTransaksi?.nama ||
-    trx.detail_transaksi?.nama ||
-    trx.metode_pembayaran ||
-    trx.metode ||
-    trx.jalur_pembayaran ||
-    trx.nama_detail_transaksi ||
-    '-';
+  const getMetodeDisplay = (trx) => {
+    // Try to get from himpun first
+    if (trx.himpun?.nama_himpun) {
+      return trx.himpun.nama_himpun;
+    }
+    if (trx.himpun?.nama) {
+      return trx.himpun.nama;
+    }
+    // Fallback to detail_transaksi
+    if (trx.detailTransaksi?.nama) {
+      return trx.detailTransaksi.nama;
+    }
+    if (trx.detail_transaksi?.nama) {
+      return trx.detail_transaksi.nama;
+    }
+    return trx.metode_pembayaran || trx.metode || trx.jalur_pembayaran || trx.nama_detail_transaksi || '-';
+  };
+
+  const getDetailHimpunDisplay = (trx) => {
+    // Try to get kode_detail_himpun from detail_himpun
+    if (trx.detail_himpun?.nama) {
+      return trx.detail_himpun.nama;
+    }
+    if (trx.detailHimpun?.nama) {
+      return trx.detailHimpun.nama;
+    }
+    // Fallback to existing detail_transaksi
+    if (trx.kode_detail_transaksi) {
+      return trx.kode_detail_transaksi;
+    }
+    return trx.detail_transaksi?.kode_detail_transaksi || trx.detailTransaksi?.kode_detail_transaksi || '-';
+  };
 
   const getStatusDisplay = (trx) => {
     const status = (
@@ -273,6 +325,12 @@ function LaporanDonasiAdmin() {
       return;
     }
 
+    if (!adminKodeUser) {
+      setActionMessage('Kode user admin yang sedang login tidak ditemukan. Lengkapi data admin terlebih dahulu sebelum verifikasi transaksi.');
+      setActiveId(null);
+      return;
+    }
+
     try {
       const response = await putTransaksi(
         id,
@@ -280,7 +338,7 @@ function LaporanDonasiAdmin() {
         trx.kode_donatur,
         trx.kode_jenis_donasi,
         trx.kode_detail_donasi,
-        trx.kode_user,
+        adminKodeUser,
         trx.kode_himpun,
         trx.kode_detail_transaksi,
         trx.jumlah_donasi,
@@ -291,7 +349,7 @@ function LaporanDonasiAdmin() {
         setActionMessage('Status transaksi berhasil diubah menjadi sukses.');
         addNotification({
           title: 'Status Transaksi Dikonfirmasi',
-          message: `Transaksi ${trx.kode_transaksi || id} telah dikonfirmasi admin dan status berubah menjadi berhasil.`,
+          message: `Transaksi ${trx.kode_transaksi || id} telah dikonfirmasi ${adminDisplayName} dan status berubah menjadi berhasil.`,
           userType: 'donatur',
           audienceKey:
             (typeof trx?.kode_donatur === 'string' && trx.kode_donatur) ||
@@ -342,13 +400,14 @@ function LaporanDonasiAdmin() {
     exportRowsToExcel(
       exportMeta.filename,
       exportMeta.title,
-      ['Kode Transaksi', 'Donatur', 'Kategori', 'Program', 'Metode', 'Nominal', 'Tanggal', 'Status'],
+      ['Kode Transaksi', 'Donatur', 'Kategori', 'Program', 'Metode', 'Kode Detail', 'Nominal', 'Tanggal', 'Status'],
       filteredTransaksi.map((trx) => [
         trx.kode_transaksi || '-',
         getDonaturDisplay(trx),
         getJenisMeta(trx).nama,
         getDetailDonasiDisplay(trx),
         getMetodeDisplay(trx),
+        getDetailHimpunDisplay(trx),
         Number(trx.jumlah || trx.jumlah_donasi || 0) || 0,
         formatDate(trx.tanggal_transaksi || trx.tgl_transaksi || trx.created_at || trx.tanggal || trx.tgl || null),
         getStatusDisplay(trx),
@@ -361,13 +420,14 @@ function LaporanDonasiAdmin() {
 
     exportRowsToPdf(
       exportMeta.title,
-      ['Kode Transaksi', 'Donatur', 'Kategori', 'Program', 'Metode', 'Nominal', 'Tanggal', 'Status'],
+      ['Kode Transaksi', 'Donatur', 'Kategori', 'Program', 'Metode', 'Kode Detail', 'Nominal', 'Tanggal', 'Status'],
       filteredTransaksi.map((trx) => [
         trx.kode_transaksi || '-',
         getDonaturDisplay(trx),
         getJenisMeta(trx).nama,
         getDetailDonasiDisplay(trx),
         getMetodeDisplay(trx),
+        getDetailHimpunDisplay(trx),
         formatCurrency(trx.jumlah || trx.jumlah_donasi || 0),
         formatDate(trx.tanggal_transaksi || trx.tgl_transaksi || trx.created_at || trx.tanggal || trx.tgl || null),
         getStatusDisplay(trx),
@@ -546,6 +606,8 @@ function LaporanDonasiAdmin() {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide">Kode</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide">Donatur</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide">Kategori</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide">Metode</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide">Kode Detail</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide">Nominal</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide">Status</th>
                     <th className="px-6 py-4 text-center text-xs font-semibold text-slate-700 uppercase tracking-wide">Aksi</th>
@@ -554,7 +616,7 @@ function LaporanDonasiAdmin() {
                 <tbody className="divide-y divide-slate-200">
                   {filteredTransaksi.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="px-6 py-12 text-center">
+                      <td colSpan="9" className="px-6 py-12 text-center">
                         <p className="text-slate-600 font-medium">Tidak ada transaksi yang sesuai filter.</p>
                       </td>
                     </tr>
@@ -577,6 +639,8 @@ function LaporanDonasiAdmin() {
                           <td className="px-6 py-4 text-sm text-slate-700 font-medium">{trx.kode_transaksi || '-'}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">{getDonaturDisplay(trx)}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">{jenisMeta.nama}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{getMetodeDisplay(trx)}</td>
+                          <td className="px-6 py-4 text-sm text-slate-600">{getDetailHimpunDisplay(trx)}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">{formatCurrency(trx.jumlah || trx.jumlah_donasi || 0)}</td>
                           <td className="px-6 py-4 text-sm">
                             <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getStatusBadgeClass(statusLabel)}`}>
@@ -663,6 +727,10 @@ function LaporanDonasiAdmin() {
                   <p className="text-sm font-semibold text-slate-800">{getMetodeDisplay(selectedTransaction)}</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs text-slate-500 mb-2">Detail Bank</p>
+                  <p className="text-sm font-semibold text-slate-800">{getDetailHimpunDisplay(selectedTransaction)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 p-4">
                   <p className="text-xs text-slate-500 mb-2">Status</p>
                   <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getStatusBadgeClass(getStatusDisplay(selectedTransaction))}`}>
                     {getStatusDisplay(selectedTransaction)}
@@ -671,10 +739,6 @@ function LaporanDonasiAdmin() {
                 <div className="rounded-2xl border border-slate-200 p-4">
                   <p className="text-xs text-slate-500 mb-2">Kode Donatur</p>
                   <p className="text-sm font-semibold text-slate-800">{selectedTransaction.kode_donatur || selectedTransaction.donatur?.kode_donatur || '-'}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 p-4">
-                  <p className="text-xs text-slate-500 mb-2">Kode Detail Transaksi</p>
-                  <p className="text-sm font-semibold text-slate-800">{selectedTransaction.kode_detail_transaksi || selectedTransaction.detail_transaksi?.kode_detail_transaksi || '-'}</p>
                 </div>
               </div>
 
@@ -686,23 +750,19 @@ function LaporanDonasiAdmin() {
               </div>
 
               <div className="rounded-2xl border border-slate-200 p-4">
-                <p className="text-xs text-slate-500 mb-3">Data Tambahan</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <p className="text-xs text-slate-500 mb-3">Identitas User Pengonfirm</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                   <div>
-                    <span className="text-slate-500">Kode Jenis Donasi: </span>
-                    <span className="font-medium text-slate-800">{selectedTransaction.kode_jenis_donasi || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Kode Detail Donasi: </span>
-                    <span className="font-medium text-slate-800">{selectedTransaction.kode_detail_donasi || selectedTransaction.detail_donasi?.kode_detail_donasi || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Kode Himpun: </span>
-                    <span className="font-medium text-slate-800">{selectedTransaction.kode_himpun || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Kode User: </span>
+                    <span className="text-slate-500">Kode : </span>
                     <span className="font-medium text-slate-800">{selectedTransaction.kode_user || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Nama : </span>
+                    <span className="font-medium text-slate-800">{selectedTransaction.nama_user || selectedTransaction.user?.nama_user || selectedTransaction.user?.nama || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Role: </span>
+                    <span className="font-medium text-slate-800">{selectedTransaction.role || selectedTransaction.user?.role || '-'}</span>
                   </div>
                 </div>
               </div>

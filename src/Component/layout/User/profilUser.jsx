@@ -27,6 +27,13 @@ function Profil() {
   const { deleteDonatur, loading: deleting, error: deleteError } = useDeleteDonatur();
 
   const donatur = data?.donatur;
+  const isProfileIncomplete = [
+    donatur?.nama,
+    donatur?.nik,
+    donatur?.alamat,
+    donatur?.tempat_lahir,
+    donatur?.tanggal_lahir,
+  ].some((value) => !String(value || '').trim());
 
   const initials = donatur?.nama
     ? donatur.nama
@@ -178,6 +185,24 @@ function Profil() {
         {deleteError && (
           <div className="rounded-[28px] border border-red-200 bg-white px-5 py-4 text-sm text-red-700 shadow-sm">
             {deleteError}
+          </div>
+        )}
+
+        {isProfileIncomplete && (
+          <div className="flex flex-col gap-4 rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-5 text-sm text-amber-800 shadow-sm md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-semibold text-amber-900">Data diri Anda belum lengkap.</p>
+              <p className="mt-1 leading-6">
+                Lengkapi profil agar proses donasi, pencatatan transaksi, dan layanan akun berjalan lebih baik.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleEditClick}
+              className="inline-flex items-center justify-center rounded-2xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600"
+            >
+              Lengkapi Data Diri
+            </button>
           </div>
         )}
 
