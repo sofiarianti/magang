@@ -109,8 +109,16 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const [nominal, setNominal] = useState('');
   const [catatanDonatur, setCatatanDonatur] = useState('');
   const [guestIdentity, setGuestIdentity] = useState({
+    nik: user?.donatur?.nik || user?.nik || '',
     nama: user?.donatur?.nama || (user?.nama && user.nama !== 'Guest Donatur' ? user.nama : ''),
+    alamat: user?.donatur?.alamat || user?.alamat || '',
+    tempat_lahir: user?.donatur?.tempat_lahir || user?.tempat_lahir || '',
+    tanggal_lahir: user?.donatur?.tanggal_lahir || user?.tanggal_lahir || '',
     jenis_kelamin: user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '',
+    agama: user?.donatur?.agama || user?.agama || '',
+    status_perkawinan: user?.donatur?.status_perkawinan || user?.status_perkawinan || '',
+    pekerjaan: user?.donatur?.pekerjaan || user?.pekerjaan || '',
+    kewarganegaraan: user?.donatur?.kewarganegaraan || user?.kewarganegaraan || 'Indonesia',
     no_hp: user?.donatur?.no_hp || user?.no_hp || '',
     email: user?.donatur?.email || user?.email || '',
   });
@@ -1005,16 +1013,16 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     }
 
     const createdGuestDonatur = await postDonatur(
-      '',
+      normalizedGuestIdentity.nik,
       normalizedGuestIdentity.nama,
-      '',
-      '',
-      '',
+      normalizedGuestIdentity.alamat,
+      normalizedGuestIdentity.tempat_lahir,
+      normalizedGuestIdentity.tanggal_lahir,
       normalizedGuestIdentity.jenis_kelamin,
-      '',
-      '',
-      '',
-      '',
+      normalizedGuestIdentity.agama,
+      normalizedGuestIdentity.status_perkawinan,
+      normalizedGuestIdentity.pekerjaan,
+      normalizedGuestIdentity.kewarganegaraan,
       normalizedGuestIdentity.no_hp,
       normalizedGuestIdentity.email,
       '',
@@ -1043,10 +1051,18 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
 
     const guestUser = {
       ...(currentUser?.isGuest ? currentUser : {}),
+      nik: normalizedGuestIdentity.nik,
       nama: normalizedGuestIdentity.nama,
+      alamat: normalizedGuestIdentity.alamat,
+      tempat_lahir: normalizedGuestIdentity.tempat_lahir,
+      tanggal_lahir: normalizedGuestIdentity.tanggal_lahir,
+      jenis_kelamin: normalizedGuestIdentity.jenis_kelamin,
+      agama: normalizedGuestIdentity.agama,
+      status_perkawinan: normalizedGuestIdentity.status_perkawinan,
+      pekerjaan: normalizedGuestIdentity.pekerjaan,
+      kewarganegaraan: normalizedGuestIdentity.kewarganegaraan,
       email: normalizedGuestIdentity.email,
       no_hp: normalizedGuestIdentity.no_hp,
-      jenis_kelamin: normalizedGuestIdentity.jenis_kelamin,
       isGuest: true,
       isRegister: 0,
       is_register: 0,
@@ -1063,8 +1079,9 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const validateGuestIdentity = (identity) => {
     if (!identity) return 'Identitas guest belum tersedia.';
 
-    if (!identity.nama || !identity.jenis_kelamin || !identity.no_hp || !identity.email) {
-      return 'Nama, jenis kelamin, nomor HP, dan email guest wajib diisi.';
+    // Validasi field wajib
+    if (!identity.nik || !identity.nama || !identity.jenis_kelamin || !identity.no_hp || !identity.email) {
+      return 'NIK, nama, jenis kelamin, nomor HP, dan email guest wajib diisi.';
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1119,10 +1136,18 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     setSubmitMessage('');
     const normalizedGuestIdentity = isGuest
       ? {
-          nama: String(guestIdentity.nama || user?.donatur?.nama || user?.nama || '').trim(),
-          jenis_kelamin: String(guestIdentity.jenis_kelamin || user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '').trim(),
-          no_hp: String(guestIdentity.no_hp || user?.donatur?.no_hp || user?.no_hp || '').trim(),
-          email: String(guestIdentity.email || user?.donatur?.email || user?.email || '').trim(),
+            nik: String(guestIdentity.nik || user?.donatur?.nik || user?.nik || '').trim(),
+            nama: String(guestIdentity.nama || user?.donatur?.nama || user?.nama || '').trim(),
+            alamat: String(guestIdentity.alamat || user?.donatur?.alamat || user?.alamat || '').trim(),
+            tempat_lahir: String(guestIdentity.tempat_lahir || user?.donatur?.tempat_lahir || user?.tempat_lahir || '').trim(),
+            tanggal_lahir: String(guestIdentity.tanggal_lahir || user?.donatur?.tanggal_lahir || user?.tanggal_lahir || '').trim(),
+            jenis_kelamin: String(guestIdentity.jenis_kelamin || user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '').trim(),
+            agama: String(guestIdentity.agama || user?.donatur?.agama || user?.agama || '').trim(),
+            status_perkawinan: String(guestIdentity.status_perkawinan || user?.donatur?.status_perkawinan || user?.status_perkawinan || '').trim(),
+            pekerjaan: String(guestIdentity.pekerjaan || user?.donatur?.pekerjaan || user?.pekerjaan || '').trim(),
+            kewarganegaraan: String(guestIdentity.kewarganegaraan || user?.donatur?.kewarganegaraan || user?.kewarganegaraan || 'Indonesia').trim(),
+            no_hp: String(guestIdentity.no_hp || user?.donatur?.no_hp || user?.no_hp || '').trim(),
+            email: String(guestIdentity.email || user?.donatur?.email || user?.email || '').trim(),
         }
       : null;
 
@@ -1440,13 +1465,28 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                 <div className="mb-4">
                   <p className="text-sm font-bold text-slate-900">Identitas Tamu</p>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Karena Anda berdonasi sebagai tamu, lengkapi identitas singkat berikut sebelum melanjutkan donasi.
+                    Karena Anda berdonasi sebagai tamu, lengkapi identitas berikut sebelum melanjutkan donasi. (<span className="text-red-600">*</span> = wajib diisi)
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {/* NIK (required) */}
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Nama</label>
+                    <label className="text-sm font-bold text-slate-800">NIK <span className="text-red-600">*</span></label>
+                    <input
+                      type="text"
+                      name="nik"
+                      value={guestIdentity.nik}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Nomor induk kependudukan (KTP)"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
+                    />
+                  </div>
+
+                  {/* Nama Lengkap (required) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Nama Lengkap <span className="text-red-600">*</span></label>
                     <input
                       type="text"
                       name="nama"
@@ -1454,16 +1494,57 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                       onChange={handleGuestIdentityChange}
                       placeholder="Masukkan nama lengkap"
                       className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
                     />
                   </div>
 
+                  {/* Alamat (optional) */}
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Jenis Kelamin</label>
+                    <label className="text-sm font-bold text-slate-800">Alamat</label>
+                    <input
+                      type="text"
+                      name="alamat"
+                      value={guestIdentity.alamat}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Masukkan alamat lengkap"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Tempat Lahir (optional) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Tempat Lahir</label>
+                    <input
+                      type="text"
+                      name="tempat_lahir"
+                      value={guestIdentity.tempat_lahir}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Masukkan tempat lahir"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Tanggal Lahir (optional) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Tanggal Lahir</label>
+                    <input
+                      type="date"
+                      name="tanggal_lahir"
+                      value={guestIdentity.tanggal_lahir}
+                      onChange={handleGuestIdentityChange}
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Jenis Kelamin (required) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Jenis Kelamin <span className="text-red-600">*</span></label>
                     <select
                       name="jenis_kelamin"
                       value={guestIdentity.jenis_kelamin}
                       onChange={handleGuestIdentityChange}
                       className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
                     >
                       <option value="">Pilih jenis kelamin</option>
                       <option value="Laki-laki">Laki-laki</option>
@@ -1471,8 +1552,71 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                     </select>
                   </div>
 
+                  {/* Agama (optional) */}
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Nomor HP</label>
+                    <label className="text-sm font-bold text-slate-800">Agama</label>
+                    <select
+                      name="agama"
+                      value={guestIdentity.agama}
+                      onChange={handleGuestIdentityChange}
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Pilih agama</option>
+                      <option value="Islam">Islam</option>
+                      <option value="Kristen">Kristen</option>
+                      <option value="Katolik">Katolik</option>
+                      <option value="Hindu">Hindu</option>
+                      <option value="Buddha">Buddha</option>
+                      <option value="Konghucu">Konghucu</option>
+                    </select>
+                  </div>
+
+                  {/* Status Perkawinan (optional) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Status Perkawinan</label>
+                    <select
+                      name="status_perkawinan"
+                      value={guestIdentity.status_perkawinan}
+                      onChange={handleGuestIdentityChange}
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Pilih status perkawinan</option>
+                      <option value="Belum Menikah">Belum Menikah</option>
+                      <option value="Menikah">Menikah</option>
+                      <option value="Cerai Hidup">Cerai Hidup</option>
+                      <option value="Cerai Mati">Cerai Mati</option>
+                    </select>
+                  </div>
+
+                  {/* Pekerjaan (optional) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Pekerjaan</label>
+                    <input
+                      type="text"
+                      name="pekerjaan"
+                      value={guestIdentity.pekerjaan}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Masukkan pekerjaan"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Kewarganegaraan (optional) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Kewarganegaraan</label>
+                    <input
+                      type="text"
+                      name="kewarganegaraan"
+                      value={guestIdentity.kewarganegaraan}
+                      onChange={handleGuestIdentityChange}
+                      placeholder="Contoh: Indonesia"
+                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Nomor HP (required) */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-800">Nomor HP <span className="text-red-600">*</span></label>
                     <input
                       type="tel"
                       name="no_hp"
@@ -1480,11 +1624,13 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                       onChange={handleGuestIdentityChange}
                       placeholder="Contoh: 08123456789"
                       className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
                     />
                   </div>
 
+                  {/* Email (required) */}
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Email</label>
+                    <label className="text-sm font-bold text-slate-800">Email <span className="text-red-600">*</span></label>
                     <input
                       type="email"
                       name="email"
@@ -1492,6 +1638,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                       onChange={handleGuestIdentityChange}
                       placeholder="Masukkan email aktif"
                       className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
                     />
                   </div>
                 </div>
