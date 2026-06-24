@@ -17,9 +17,10 @@ const usePutDetailHimpun = () => {
    * @param { string } kode_detail_himpun - Kode detail himpun.
    * @param { string } nama - Nama detail himpun.
    * @param { string } kode_himpun - Kode himpun.
+   * @param { string } no_rek- Kode jenis donasi.
    * @returns { Promise<Object> } - Mengembalikan data respons dari backend atau error.
    */
-  const putDetailHimpun = async (id, kode_detail_himpun, nama, kode_himpun) => {
+  const putDetailHimpun = async (id, kode_detail_himpun, nama, kode_himpun,no_rek) => {
     setLoading(true);
     setError(null);
 
@@ -29,6 +30,7 @@ const usePutDetailHimpun = () => {
         kode_detail_himpun,
         nama,
         kode_himpun,
+        no_rek,
       };
 
       // Defensive check

@@ -15,9 +15,10 @@ const usePostDetailHimpun = () => {
    * @param { string } kode_detail_himpun 
    * @param { string } nama 
    * @param { string } kode_himpun 
+   * @param { string } no_rek 
    * @returns { Promise<Object> } - Mengembalikan data respons dari backend atau error.
    */
-  const postDetailHimpun = async (kode_detail_himpun, nama, kode_himpun) => {
+  const postDetailHimpun = async (kode_detail_himpun, nama, kode_himpun, no_rek) => {
     setLoading(true);
     setError(null);
 
@@ -26,6 +27,7 @@ const usePostDetailHimpun = () => {
         kode_detail_himpun,
         nama,
         kode_himpun,
+        no_rek,
       };
 
       const candidateEndpoints = [

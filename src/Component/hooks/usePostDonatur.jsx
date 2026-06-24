@@ -5,17 +5,9 @@ import endpoints from '../Services/endpointUser';
 /**
  * @returns { Object } - Mengembalikan fungsi postDonatur, serta status loading dan error.
  */
-const usePostDonatur = () => {
+const usePostDonatur = (endpointSource = endpoints) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  const generateGuestNik = () => {
-    const timestampPart = Date.now().toString().slice(-10);
-    const randomPart = Math.floor(Math.random() * 1000000)
-      .toString()
-      .padStart(6, '0');
-    return `${timestampPart}${randomPart}`;
-  };
 
   const buildValidationMessage = (responseData) => {
     const baseMessage =
@@ -45,6 +37,115 @@ const usePostDonatur = () => {
     return flatErrors.length ? `${baseMessage} - ${flatErrors.join(' | ')}` : baseMessage;
   };
 
+  const toNullableText = (value) => {
+    const trimmedValue = String(value || '').trim();
+    return trimmedValue ? trimmedValue : null;
+  };
+
+  const toTrimmedText = (value) => String(value || '').trim();
+
+  const buildPayloadVariants = (payload) => {
+    const nullableKeys = [
+      'nik',
+      'alamat',
+      'tempat_lahir',
+      'tanggal_lahir',
+      'agama',
+      'status_perkawinan',
+      'pekerjaan',
+      'kewarganegaraan',
+      'password',
+    ];
+
+    const variants = [
+      payload,
+      {
+        ...payload,
+        ...Object.fromEntries(nullableKeys.map((key) => [key, undefined])),
+      },
+      {
+        ...payload,
+        is_register: undefined,
+      },
+      {
+        ...payload,
+        isRegister: undefined,
+      },
+      {
+        ...payload,
+        isRegister: undefined,
+        is_register: undefined,
+      },
+    ];
+
+    const seen = new Set();
+
+    return variants.filter((variant) => {
+      const sanitizedVariant = { ...variant };
+
+      Object.keys(sanitizedVariant).forEach((key) => {
+        if (sanitizedVariant[key] === undefined) {
+          delete sanitizedVariant[key];
+        }
+      });
+
+      const signature = JSON.stringify(sanitizedVariant);
+      if (seen.has(signature)) {
+        return false;
+      }
+
+      seen.add(signature);
+      return true;
+    });
+  };
+
+  const buildDonaturPayload = ({
+    nik,
+    nama,
+    alamat,
+    tempat_lahir,
+    tanggal_lahir,
+    jenis_kelamin,
+    agama,
+    status_perkawinan,
+    pekerjaan,
+    kewarganegaraan,
+    no_hp,
+    email,
+    password,
+    isRegister,
+    id_lembaga,
+  }) => {
+    const normalizedIsRegister =
+      isRegister === null || isRegister === undefined ? null : Number(isRegister);
+    const isRegisteredDonatur = normalizedIsRegister === 1;
+    const fallbackNama = normalizedIsRegister === 1 ? 'Donatur Baru' : 'Donatur Tamu';
+    const fallbackJenisKelamin = normalizedIsRegister === 1 ? 'Belum diisi' : 'Laki-laki';
+
+    return {
+      nik: toNullableText(nik),
+      nama: toTrimmedText(nama) || fallbackNama,
+      alamat: toNullableText(alamat),
+      tempat_lahir: toNullableText(tempat_lahir),
+      tanggal_lahir: toNullableText(tanggal_lahir),
+      jenis_kelamin: toTrimmedText(jenis_kelamin) || fallbackJenisKelamin,
+      agama: toNullableText(agama),
+      status_perkawinan: toNullableText(status_perkawinan),
+      pekerjaan: toNullableText(pekerjaan),
+      kewarganegaraan: toNullableText(kewarganegaraan),
+      id_lembaga: isRegisteredDonatur ? toNullableText(id_lembaga) : null,
+      no_hp: toTrimmedText(no_hp),
+      email: toTrimmedText(email),
+      password: isRegisteredDonatur ? toNullableText(password) : undefined,
+      ...(normalizedIsRegister === null
+        ? {}
+        : {
+            isRegister: normalizedIsRegister,
+            is_register: normalizedIsRegister,
+          }),
+    };
+  };
+
   /**
    * Fungsi untuk mengirim data ke backend.
    * @param { string } nik 
@@ -63,83 +164,85 @@ const usePostDonatur = () => {
    * @param { number | null } isRegister
    * @returns { Promise<Object> } - Mengembalikan data respons dari backend atau error.
    */
-  const postDonatur = async (nik, nama, alamat, tempat_lahir, tanggal_lahir, jenis_kelamin, agama, status_perkawinan, pekerjaan, kewarganegaraan, no_hp, email, password, isRegister = null) => {
+  const postDonatur = async (nik, nama, alamat, tempat_lahir, tanggal_lahir, jenis_kelamin, agama, status_perkawinan, pekerjaan, kewarganegaraan, no_hp, email, password, isRegister = null, id_lembaga = null) => {
     setLoading(true);
     setError(null);
 
     try {
-      const isGuestDonatur = Number(isRegister) === 0;
-      const sanitizedNama = String(nama || '').trim() || 'Donatur Tamu';
-      const sanitizedPhone = String(no_hp || '').trim();
-      const sanitizedEmail = String(email || '').trim();
-      const sanitizedPassword = String(password || '').trim();
-      const guestNik = String(nik || '').trim() || generateGuestNik();
-      const registerPayload = {
-        nik: String(nik || '').trim() || null,
-        nama: sanitizedNama,
-        alamat: String(alamat || '').trim() || '-',
-        tempat_lahir: String(tempat_lahir || '').trim() || '-',
-        tanggal_lahir: String(tanggal_lahir || '').trim() || '2000-01-01',
-        jenis_kelamin: String(jenis_kelamin || '').trim() || 'Laki-laki',
-        agama: String(agama || '').trim() || 'Islam',
-        status_perkawinan: String(status_perkawinan || '').trim() || 'Belum Menikah',
-        pekerjaan: String(pekerjaan || '').trim() || '-',
-        kewarganegaraan: String(kewarganegaraan || '').trim() || 'Indonesia',
-        no_hp: sanitizedPhone,
-        email: sanitizedEmail,
-        password: sanitizedPassword,
-      };
+      const standardizedPayload = buildDonaturPayload({
+        nik,
+        nama,
+        alamat,
+        tempat_lahir,
+        tanggal_lahir,
+        jenis_kelamin,
+        agama,
+        status_perkawinan,
+        pekerjaan,
+        kewarganegaraan,
+        no_hp,
+        email,
+        password,
+        isRegister,
+        id_lembaga,
+      });
+      const normalizedIsRegister =
+        isRegister === null || isRegister === undefined ? null : Number(isRegister);
+      const payloadVariants = normalizedIsRegister === 1
+        ? buildPayloadVariants(standardizedPayload)
+        : [
+            standardizedPayload,
+            {
+              ...standardizedPayload,
+              is_register: undefined,
+            },
+            {
+              ...standardizedPayload,
+              isRegister: undefined,
+            },
+            {
+              ...standardizedPayload,
+              isRegister: undefined,
+              is_register: undefined,
+            },
+          ].filter((variant, index, allVariants) => {
+            const sanitizedVariant = { ...variant };
 
-      const guestPayloadVariants = [
-        {
-          nik: guestNik,
-          nama: sanitizedNama,
-          alamat: '',
-          tempat_lahir: '',
-          tanggal_lahir: '',
-          jenis_kelamin: String(jenis_kelamin || '').trim(),
-          agama: '',
-          status_perkawinan: '',
-          pekerjaan: '',
-          kewarganegaraan: '',
-          no_hp: sanitizedPhone,
-          email: sanitizedEmail,
-          password: '',
-        },
-        {
-          nik: guestNik,
-          nama: sanitizedNama,
-          alamat: '-',
-          tempat_lahir: '-',
-          tanggal_lahir: '2000-01-01',
-          jenis_kelamin: String(jenis_kelamin || '').trim() || 'Laki-laki',
-          agama: 'Islam',
-          status_perkawinan: 'Belum Menikah',
-          pekerjaan: '-',
-          kewarganegaraan: 'Indonesia',
-          no_hp: sanitizedPhone,
-          email: sanitizedEmail,
-          password: `Guest-${Date.now()}-Pwd`,
-        },
-      ];
+            Object.keys(sanitizedVariant).forEach((key) => {
+              if (sanitizedVariant[key] === undefined) {
+                delete sanitizedVariant[key];
+              }
+            });
 
-      const payloadVariants = isGuestDonatur ? guestPayloadVariants : [registerPayload];
+            return (
+              allVariants.findIndex((candidate) => {
+                const sanitizedCandidate = { ...candidate };
+
+                Object.keys(sanitizedCandidate).forEach((key) => {
+                  if (sanitizedCandidate[key] === undefined) {
+                    delete sanitizedCandidate[key];
+                  }
+                });
+
+                return JSON.stringify(sanitizedCandidate) === JSON.stringify(sanitizedVariant);
+              }) === index
+            );
+          });
       let lastError = null;
 
       for (let index = 0; index < payloadVariants.length; index += 1) {
-        const data = {
-          ...payloadVariants[index],
-        };
+        const data = { ...payloadVariants[index] };
 
-        if (isRegister !== null && isRegister !== undefined) {
-          data.isRegister = Number(isRegister);
-          data.is_register = Number(isRegister);
-        }
+        Object.keys(data).forEach((key) => {
+          if (data[key] === undefined) {
+            delete data[key];
+          }
+        });
 
         console.log(`Payload donatur varian #${index + 1} yang dikirim:`, data);
 
         try {
-          const response = await api.post(endpoints.donatur.create, data, {
+          const response = await api.post(endpointSource.donatur.create, data, {
             headers: {
               'Content-Type': 'application/json',
             },

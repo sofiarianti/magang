@@ -6,45 +6,74 @@ const buildUniquePayloads = (basePayload, catatan) => {
   const variants = [
     {
       ...basePayload,
-      ...(catatan ? { catatan } : {}),
+      catatan,
     },
     {
       kode_transaksi: basePayload.kode_transaksi,
       kode_donatur: basePayload.kode_donatur,
       kode_jenis_donasi: basePayload.kode_jenis_donasi,
       kode_detail_donasi: basePayload.kode_detail_donasi,
+      kode_user: basePayload.kode_user,
       kode_himpun: basePayload.kode_himpun,
       kode_detail_himpun: basePayload.kode_detail_himpun,
+      kode_detail_transaksi: basePayload.kode_detail_transaksi,
+      jumlah_donasi: basePayload.jumlah_donasi,
       jumlah: basePayload.jumlah,
       status: basePayload.status,
-      ...(catatan ? { catatan } : {}),
+      status_transaksi: basePayload.status_transaksi,
+      catatan,
+      metode_pembayaran: basePayload.metode_pembayaran,
+      jalur_pembayaran: basePayload.jalur_pembayaran,
+      id_lembaga: basePayload.id_lembaga,
+      isRegister: basePayload.isRegister,
+      is_register: basePayload.is_register,
     },
     {
       kode_transaksi: basePayload.kode_transaksi,
       kode_donatur: basePayload.kode_donatur,
       kode_jenis_donasi: basePayload.kode_jenis_donasi,
       kode_detail_donasi: basePayload.kode_detail_donasi,
+      kode_user: basePayload.kode_user,
       kode_himpun: basePayload.kode_himpun,
       kode_detail_transaksi: basePayload.kode_detail_transaksi,
+      kode_detail_himpun: basePayload.kode_detail_himpun,
+      jumlah_donasi: basePayload.jumlah_donasi,
       jumlah: basePayload.jumlah,
       status: basePayload.status,
-      ...(catatan ? { catatan } : {}),
+      status_transaksi: basePayload.status_transaksi,
+      catatan,
+      metode_pembayaran: basePayload.metode_pembayaran,
+      jalur_pembayaran: basePayload.jalur_pembayaran,
+      id_lembaga: basePayload.id_lembaga,
+      isRegister: basePayload.isRegister,
+      is_register: basePayload.is_register,
     },
     {
       kode_transaksi: basePayload.kode_transaksi,
       kode_donatur: basePayload.kode_donatur,
       kode_jenis_donasi: basePayload.kode_jenis_donasi,
       kode_detail_donasi: basePayload.kode_detail_donasi,
+      kode_user: basePayload.kode_user,
       kode_himpun: basePayload.kode_himpun,
+      kode_detail_transaksi: basePayload.kode_detail_transaksi,
+      kode_detail_himpun: basePayload.kode_detail_himpun,
       jumlah_donasi: basePayload.jumlah_donasi,
-      ...(catatan ? { catatan } : {}),
+      jumlah: basePayload.jumlah,
+      status: basePayload.status,
+      status_transaksi: basePayload.status_transaksi,
+      catatan,
+      metode_pembayaran: basePayload.metode_pembayaran,
+      jalur_pembayaran: basePayload.jalur_pembayaran,
+      id_lembaga: basePayload.id_lembaga,
+      isRegister: basePayload.isRegister,
+      is_register: basePayload.is_register,
     },
   ];
 
   const seen = new Set();
   return variants.filter((variant) => {
     Object.keys(variant).forEach((key) => {
-      if (variant[key] === undefined || variant[key] === null || variant[key] === '') {
+      if (variant[key] === undefined) {
         delete variant[key];
       }
     });
@@ -59,7 +88,7 @@ const buildUniquePayloads = (basePayload, catatan) => {
 /**
  * @returns { Object } - Mengembalikan fungsi postDonatur, serta status loading dan error.
  */
-const usePostTransaksi = () => {
+const usePostTransaksi = (endpointSource = endpoints) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -78,6 +107,8 @@ const usePostTransaksi = () => {
    * @param { string } catatan
    * @param { number | null } isRegister
    * @param { string } metodePembayaran
+   * @param { string } jalurPembayaran
+   * @param { string | null } idLembaga
    * @returns { Promise<Object> } - Mengembalikan data respons dari backend atau error.
    */
   const postTransaksi = async (
@@ -93,7 +124,8 @@ const usePostTransaksi = () => {
     catatan,
     isRegister = null,
     metodePembayaran = '',
-    jalurPembayaran = ''
+    jalurPembayaran = '',
+    idLembaga = null
   ) => {
     setLoading(true);
     setError(null);
@@ -101,25 +133,38 @@ const usePostTransaksi = () => {
     try {
       const normalizedJumlahDonasi = Number(jumlah_donasi);
       const sanitizedCatatan = catatan && String(catatan).trim() ? String(catatan).trim() : '';
+      const normalizedIsRegister =
+        isRegister === null || isRegister === undefined ? null : Number(isRegister);
+      const isRegisteredDonatur = normalizedIsRegister === 1;
       const basePayload = {
         kode_transaksi: String(kode_transaksi || '').trim(),
         kode_donatur: String(kode_donatur || '').trim(),
         kode_jenis_donasi: String(kode_jenis_donasi || '').trim(),
         kode_detail_donasi: String(kode_detail_donasi || '').trim(),
-        kode_user: kode_user && String(kode_user).trim() ? String(kode_user).trim() : undefined,
-        kode_himpun: kode_himpun && String(kode_himpun).trim() ? String(kode_himpun).trim() : undefined,
+        kode_user: kode_user && String(kode_user).trim() ? String(kode_user).trim() : '',
+        kode_himpun: kode_himpun && String(kode_himpun).trim() ? String(kode_himpun).trim() : '',
         kode_detail_transaksi:
           kode_detail_transaksi && String(kode_detail_transaksi).trim()
             ? String(kode_detail_transaksi).trim()
-            : undefined,
+            : null,
         kode_detail_himpun:
           kode_detail_transaksi && String(kode_detail_transaksi).trim()
             ? String(kode_detail_transaksi).trim()
-            : undefined,
+            : null,
         jumlah_donasi: normalizedJumlahDonasi,
         jumlah: normalizedJumlahDonasi,
         status: String(status || 'pending').trim() || 'pending',
         status_transaksi: String(status || 'pending').trim() || 'pending',
+        catatan: sanitizedCatatan,
+        metode_pembayaran: String(metodePembayaran || '').trim(),
+        jalur_pembayaran: String(jalurPembayaran || '').trim(),
+        id_lembaga: isRegisteredDonatur && idLembaga ? String(idLembaga).trim() : null,
+        ...(normalizedIsRegister === null
+          ? {}
+          : {
+              isRegister: normalizedIsRegister,
+              is_register: normalizedIsRegister,
+            }),
       };
 
       // Validate critical fields
@@ -155,7 +200,7 @@ const usePostTransaksi = () => {
       for (const [index, payload] of payloadVariants.entries()) {
         try {
           console.log(`Mencoba payload transaksi varian #${index + 1}`, payload);
-          const response = await api.post(endpoints.transaksi.create, payload, {
+          const response = await api.post(endpointSource.transaksi.create, payload, {
             headers: {
               'Content-Type': 'application/json',
             },

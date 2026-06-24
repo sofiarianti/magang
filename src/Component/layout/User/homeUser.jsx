@@ -39,9 +39,6 @@ function Home({ user }) {
     }
   };
 
-  // Calculate daily target
-  const dailyTarget = monthlyTarget > 0 ? Math.ceil(monthlyTarget / 30) : 0;
-
   const heroImages = [
     {
       src: 'https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=800&h=400&fit=crop',
@@ -94,12 +91,6 @@ function Home({ user }) {
       }) || null;
   }
 
-  // Fetch transactions by kode_donatur (only when donatur data is loaded and we have kd_donatur)
-  const transaksiEndpoint = !isGuest && !loading && currentDonatur?.kode_donatur
-    ? endpoints.transaksi.getByKodeDonatur(currentDonatur.kode_donatur)
-    : null;
-  const { data: transaksiData } = useAPI(transaksiEndpoint);
-
   // Fetch informasi (berita)
   const { data: informasiData } = useAPI(endpoints.informasi.getAll);
 
@@ -116,213 +107,24 @@ function Home({ user }) {
       ? 'Sahabat Dermawan'
       : currentDonatur?.nama || user?.name || user?.nama || 'Sahabat Dermawan';
 
-  const normalizeStatus = (trx) => {
-   
-    return (
-      trx?.status || trx?.status_transaksi || trx?.statusTransaksi || 'pending'
-    );
-  };
-
-  // Transform transaksi data
-  const recentTransactions = React.useMemo(() => {
-    if (!transaksiData) return [];
-    
-    const transactions = Array.isArray(transaksiData) 
-      ? transaksiData 
-      : transaksiData?.transaksi || [];
-    
-    if (transactions.length === 0) return [];
-    
-    const sortedTransactions = transactions.sort((a, b) => {
-      const dateA = new Date(a.created_at || 0);
-      const dateB = new Date(b.created_at || 0);
-      if (dateA > dateB) return -1;
-      if (dateA < dateB) return 1;
-      // If dates are equal, sort by id descending
-      const idA = parseInt(a.id || a.kode_transaksi || 0);
-      const idB = parseInt(b.id || b.kode_transaksi || 0);
-      return idB - idA;
-    });
-    
-    
-    return sortedTransactions.slice(0, 3).map((trx) => {
-      // Format date
-      const tanggalObj = new Date(trx.created_at);
-      const formattedDate = tanggalObj.toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric'
-      });
-      
-      // Format nominal 
-      const nominalNumber = parseInt(trx.jumlah_donasi || 0);
-      const formattedNominal = nominalNumber.toLocaleString('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-      });
-      
-      return {
-        id: trx.id || trx.kode_transaksi,
-        jenis: trx.jenis_donasi || trx.jenis || 'Donasi Umum',
-        tanggal: formattedDate,
-        nominal: formattedNominal,
-        status: (normalizeStatus(trx).toLowerCase() === 'success' || normalizeStatus(trx).toLowerCase() === 'verified' || normalizeStatus(trx).toLowerCase() === 'diverifikasi' || normalizeStatus(trx).toLowerCase() === 'berhasil') ? 'Sukses' : 'Diproses'
-      };
-    });
-  }, [transaksiData]);
-
-  // Calculate monthly statistics
-  const monthlyStats = React.useMemo(() => {
-    if (!transaksiData) return { currentMonthTransactions: 0, previousMonthTransactions: 0 };
-    
-    const transactions = Array.isArray(transaksiData) 
-      ? transaksiData 
-      : transaksiData?.transaksi || [];
-    
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    // Previous month
-    const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-    
-    let currentMonthCount = 0;
-    let previousMonthCount = 0;
-    
-    transactions.forEach((trx) => {
-      const trxDate = new Date(trx.created_at || trx.tanggal_transaksi || 0);
-      const trxMonth = trxDate.getMonth();
-      const trxYear = trxDate.getFullYear();
-      
-      if (trxMonth === currentMonth && trxYear === currentYear) {
-        currentMonthCount++;
-      } else if (trxMonth === prevMonth && trxYear === prevYear) {
-        previousMonthCount++;
-      }
-    });
-    
-    return { currentMonthTransactions: currentMonthCount, previousMonthTransactions: previousMonthCount };
-  }, [transaksiData]);
-
-  // Calculate today's donation
-  const todayDonation = React.useMemo(() => {
-    if (!transaksiData) return 0;
-    
-    const transactions = Array.isArray(transaksiData) 
-      ? transaksiData 
-      : transaksiData?.transaksi || [];
-    
-    const today = new Date();
-    const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    let totalToday = 0;
-    
-    transactions.forEach((trx) => {
-      const trxDate = new Date(trx.created_at || trx.tanggal_transaksi || 0);
-      const trxDateString = trxDate.toISOString().split('T')[0];
-      
-      if (trxDateString === todayString) {
-        totalToday += Number(trx.jumlah_donasi) || 0;
-      }
-    });
-    
-    return totalToday;
-  }, [transaksiData]);
-
-  // Calculate personal donation statistics
-  const donationStats = React.useMemo(() => {
-    if (!transaksiData) return { totalDonation: 0, monthlyDonation: 0, yearlyDonation: 0 };
-    
-    const transactions = Array.isArray(transaksiData) 
-      ? transaksiData 
-      : transaksiData?.transaksi || [];
-    
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    let totalDonation = 0;
-    let monthlyDonation = 0;
-    let yearlyDonation = 0;
-    
-    transactions.forEach((trx) => {
-      const amount = Number(trx.jumlah_donasi) || 0;
-      const trxDate = new Date(trx.created_at || trx.tanggal_transaksi || 0);
-      const trxMonth = trxDate.getMonth();
-      const trxYear = trxDate.getFullYear();
-      
-      totalDonation += amount;
-      
-      if (trxMonth === currentMonth && trxYear === currentYear) {
-        monthlyDonation += amount;
-      }
-      
-      if (trxYear === currentYear) {
-        yearlyDonation += amount;
-      }
-    });
-    
-    return { totalDonation, monthlyDonation, yearlyDonation };
-  }, [transaksiData]);
-
-  // Calculate average donation per transaction
-  const averageDonation = React.useMemo(() => {
-    if (!transaksiData) return 0;
-    
-    const transactions = Array.isArray(transaksiData) 
-      ? transaksiData 
-      : transaksiData?.transaksi || [];
-    
-    if (transactions.length === 0) return 0;
-    
-    let totalAmount = 0;
-    transactions.forEach((trx) => {
-      totalAmount += Number(trx.jumlah_donasi) || 0;
-    });
-    
-    return Math.round(totalAmount / transactions.length);
-  }, [transaksiData]);
-
-  // Calculate total transaction frequency
-  const totalTransactionFrequency = React.useMemo(() => {
-    if (!transaksiData) return 0;
-    
-    const transactions = Array.isArray(transaksiData) 
-      ? transaksiData 
-      : transaksiData?.transaksi || [];
-    
-    return transactions.length;
-  }, [transaksiData]);
-
-  const quickStats = [
+  const highlightCards = [
     {
-      label: 'Total Donasi Saya',
-      value: donationStats.totalDonation.toLocaleString('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-      }),
-      change: '+12%',
-      PillLabel: 'Sejak bergabung',
+      label: 'Donasi Fleksibel',
+      value: 'Zakat, infak, sedekah',
+      description: 'Pilih jenis donasi sesuai kebutuhan dan tunaikan dalam beberapa langkah singkat.',
+      pillLabel: 'Mudah diakses',
     },
     {
-      label: 'Rata-rata per Transaksi',
-      value: averageDonation.toLocaleString('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-      }),
-      change: '+5%',
-      PillLabel: 'Konsistensi donasi',
+      label: 'Pembayaran Praktis',
+      value: 'Transfer dan QRIS',
+      description: 'Gunakan metode pembayaran yang tersedia dan lanjutkan transaksi dengan alur yang jelas.',
+      pillLabel: 'Siap digunakan',
     },
     {
-      label: 'Total Frekuensi Transaksi',
-      value: `${totalTransactionFrequency} kali`,
-      change: '+15%',
-      PillLabel: 'Dari awal bergabung',
+      label: 'Pantauan Transparan',
+      value: 'Status mudah dipantau',
+      description: 'Cek status transaksi, notifikasi, dan informasi program langsung dari dashboard.',
+      pillLabel: 'Untuk semua pengguna',
     },
   ];
 
@@ -449,34 +251,33 @@ function Home({ user }) {
               </div>
             </section>
 
-            {/* Kartu statistik cepat */}
             <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {quickStats.map((item) => (
-                <div
-                  key={item.label}
-                  className="bg-white rounded-xl shadow-sm border border-slate-100 px-4 py-3 flex flex-col gap-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-blue-700">{item.label}</p>
-                    <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 text-[10px] font-medium px-2 py-0.5">
-                      {item.PillLabel}
-                    </span>
+              {highlightCards.map((item) => (
+                  <div
+                    key={item.label}
+                    className="bg-white rounded-xl shadow-sm border border-slate-100 px-4 py-3 flex flex-col gap-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] text-blue-700">{item.label}</p>
+                      <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 text-[10px] font-medium px-2 py-0.5">
+                        {item.pillLabel}
+                      </span>
+                    </div>
+                    <p className="text-base md:text-lg font-semibold text-blue-900">
+                      {item.value}
+                    </p>
+                    <p className="text-[11px] text-slate-600 leading-5">
+                      {item.description}
+                    </p>
+                    <div className="mt-1 flex gap-1 h-8 items-end">
+                      <span className="w-1.5 rounded-full bg-blue-200 h-3" />
+                      <span className="w-1.5 rounded-full bg-blue-300 h-4" />
+                      <span className="w-1.5 rounded-full bg-blue-400 h-5" />
+                      <span className="w-1.5 rounded-full bg-amber-400 h-6" />
+                      <span className="w-1.5 rounded-full bg-amber-500 h-8" />
+                    </div>
                   </div>
-                  <p className="text-base md:text-lg font-semibold text-blue-900">
-                    {item.value}
-                  </p>
-                  <p className="text-[11px] text-amber-600 font-medium">
-                    {item.change} dari periode sebelumnya
-                  </p>
-                  <div className="mt-1 flex gap-1 h-8 items-end">
-                    <span className="w-1.5 rounded-full bg-blue-200 h-3" />
-                    <span className="w-1.5 rounded-full bg-blue-300 h-4" />
-                    <span className="w-1.5 rounded-full bg-blue-400 h-5" />
-                    <span className="w-1.5 rounded-full bg-amber-400 h-6" />
-                    <span className="w-1.5 rounded-full bg-amber-500 h-8" />
-                  </div>
-                </div>
-              ))}
+                ))}
             </section>
 
          

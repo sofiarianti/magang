@@ -1,7 +1,7 @@
 // src/Component/hooks/useDeleteImage.js
 import { useState } from 'react';
 import api from '../Services/api';
-import endpoints from '../Services/endpointAdmin'; // Pastikan path ini benar
+import endpoints from '../Services/endpointUser'; // Pastikan path ini benar
 
 /**
  * useDeleteZakat adalah custom hook yang digunakan untuk menghapus data zakat dari backend.

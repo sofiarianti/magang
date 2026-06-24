@@ -1,8 +1,7 @@
 // utils/notifikasi.js
 
-// Helper untuk menentukan storage key berdasarkan user type
 function getStorageKey(userType = 'donatur') {
-  return userType === 'admin' ? 'admin_notifications' : 'donatur_notifications';
+  return 'donatur_notifications';
 }
 
 function findFieldDeep(obj, fieldNames) {
@@ -25,10 +24,8 @@ function findFieldDeep(obj, fieldNames) {
   return null;
 }
 
-// Helper untuk menentukan user type dari localStorage
 function getCurrentUserType() {
-  const admin = localStorage.getItem('admin_user');
-  return admin ? 'admin' : 'donatur';
+  return 'donatur';
 }
 
 function getCurrentDonaturKode() {
@@ -48,8 +45,7 @@ function getCurrentDonaturKode() {
 }
 
 function normalizeAudienceKey(userType, audienceKey = null) {
-  if (userType !== 'donatur') return null;
-  return audienceKey || getCurrentDonaturKode() || null;
+  return userType === 'donatur' ? audienceKey || getCurrentDonaturKode() || null : null;
 }
 
 export function addNotification({ title, message, userType = null, audienceKey = null, kode_donatur = null }) {

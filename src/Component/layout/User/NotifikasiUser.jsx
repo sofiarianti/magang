@@ -2,6 +2,46 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getNotifications, markNotificationRead, deleteNotification } from '../../Services/notifikasi';
 
+function getNotificationTone(note) {
+  const content = `${note?.title || ''} ${note?.message || ''}`.toLowerCase();
+
+  if (content.includes('bsz')) {
+    return {
+      wrapper: note.read
+        ? 'border-indigo-100 bg-white'
+        : 'border-indigo-400 bg-gradient-to-r from-indigo-50 to-white',
+      title: note.read ? 'text-indigo-800' : 'text-indigo-900',
+      body: note.read ? 'text-indigo-500' : 'text-indigo-700',
+      date: note.read ? 'text-indigo-400' : 'text-indigo-600 font-medium',
+      action: 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200',
+      dot: note.read ? 'bg-indigo-200' : 'bg-indigo-500 animate-pulse',
+      emptyText: 'text-indigo-600',
+      emptySubtext: 'text-indigo-500',
+      heading: 'text-indigo-900',
+      caption: 'text-indigo-600',
+      badge: 'bg-indigo-600 text-white',
+      button: 'bg-indigo-600 hover:bg-indigo-500 text-white',
+    };
+  }
+
+  return {
+    wrapper: note.read
+      ? 'border-blue-100 bg-white'
+      : 'border-blue-400 bg-gradient-to-r from-blue-50 to-white',
+    title: note.read ? 'text-blue-800' : 'text-blue-900',
+    body: note.read ? 'text-blue-500' : 'text-blue-700',
+    date: note.read ? 'text-blue-400' : 'text-blue-600 font-medium',
+    action: 'bg-blue-100 text-blue-600 hover:bg-blue-200',
+    dot: note.read ? 'bg-blue-200' : 'bg-blue-500 animate-pulse',
+    emptyText: 'text-blue-600',
+    emptySubtext: 'text-blue-500',
+    heading: 'text-blue-900',
+    caption: 'text-blue-600',
+    badge: 'bg-blue-600 text-white',
+    button: 'bg-blue-600 hover:bg-blue-500 text-white',
+  };
+}
+
 function getKodeDonatur(user) {
   return user?.donatur?.kode_donatur || user?.kode_donatur || null;
 }
@@ -70,33 +110,24 @@ function Notifikasi({ userType = 'donatur', user = null }) {
           </div>
         ) : (
           <div className="space-y-3">
-            {notifications.map((note) => (
-              <div
-                key={note.id}
-                className={`p-5 rounded-xl border-2 transition-all duration-200 flex items-start justify-between gap-4 group hover:shadow-md ${
-                  note.read
-                    ? 'border-blue-100 bg-white'
-                    : 'border-blue-400 bg-gradient-to-r from-blue-50 to-white'
-                }`}
-              >
+            {notifications.map((note) => {
+              const tone = getNotificationTone(note);
+
+              return (
+                <div
+                  key={note.id}
+                  className={`p-5 rounded-xl border-2 transition-all duration-200 flex items-start justify-between gap-4 group hover:shadow-md ${tone.wrapper}`}
+                >
                 <div className="flex items-start gap-3 flex-1">
-                  <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
-                    note.read ? 'bg-blue-200' : 'bg-blue-500 animate-pulse'
-                  }`}></div>
+                  <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${tone.dot}`}></div>
                   <div className="flex-1 min-w-0">
-                    <h2 className={`font-semibold text-base transition-colors ${
-                      note.read ? 'text-blue-800' : 'text-blue-900'
-                    }`}>
+                    <h2 className={`font-semibold text-base transition-colors ${tone.title}`}>
                       {note.title}
                     </h2>
-                    <p className={`text-sm mt-1 ${
-                      note.read ? 'text-blue-500' : 'text-blue-700'
-                    }`}>
+                    <p className={`text-sm mt-1 ${tone.body}`}>
                       {note.message}
                     </p>
-                    <span className={`text-xs mt-2 inline-block ${
-                      note.read ? 'text-blue-400' : 'text-blue-600 font-medium'
-                    }`}>
+                    <span className={`text-xs mt-2 inline-block ${tone.date}`}>
                       {note.date}
                     </span>
                   </div>
@@ -105,7 +136,7 @@ function Notifikasi({ userType = 'donatur', user = null }) {
                   {!note.read && (
                     <button
                       onClick={() => handleMarkAsRead(note.id)}
-                      className="p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors opacity-0 group-hover:opacity-100"
+                      className={`p-2 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${tone.action}`}
                       title="Tandai sebagai dibaca"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,8 +154,9 @@ function Notifikasi({ userType = 'donatur', user = null }) {
                     </svg>
                   </button>
                 </div>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
 

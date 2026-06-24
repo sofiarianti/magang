@@ -1,12 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import useAPI from '../../hooks/useAPI';
 import endpointsUser from '../../Services/endpointUser';
 import usePostDonatur from '../../hooks/usePostDonatur';
 import usePostTransaksi from '../../hooks/usePostTransaksi';
 import useDeleteTransaksi from '../../hooks/useDeleteTransaksi';
-import useDeleteDetail_transaksi from '../../hooks/useDeleteDetail_transaksi';
-import useUpdateTransaksi from '../../hooks/useUpdateTransaksi';
 import { addNotification } from '../../Services/notifikasi';
 import api from '../../Services/api';
 
@@ -33,6 +31,10 @@ function normalizeInlineText(value) {
     .trim();
 }
 
+function normalizeIdentity(value) {
+  return String(value || '').trim();
+}
+
 function findJenisDonasiByKey(jenisDonasiList, forcedJenisKey) {
   if (!forcedJenisKey) return null;
 
@@ -52,8 +54,66 @@ function findJenisDonasiByKey(jenisDonasiList, forcedJenisKey) {
   );
 }
 
+function extractDonaturEntity(response) {
+  if (!response || typeof response !== 'object') return null;
+
+  return (
+    response?.donatur ||
+    response?.data?.donatur ||
+    response?.result?.donatur ||
+    response?.payload?.donatur ||
+    response?.data ||
+    response?.result ||
+    response?.payload ||
+    response
+  );
+}
+
+function extractKodeDonatur(response) {
+  const donaturEntity = extractDonaturEntity(response);
+
+  return String(
+    donaturEntity?.kode_donatur ||
+    donaturEntity?.kodeDonatur ||
+    donaturEntity?.kode ||
+    response?.kode_donatur ||
+    response?.kodeDonatur ||
+    response?.data?.kode_donatur ||
+    response?.data?.kodeDonatur ||
+    response?.result?.kode_donatur ||
+    response?.result?.kodeDonatur ||
+    response?.payload?.kode_donatur ||
+    response?.payload?.kodeDonatur ||
+    ''
+  ).trim();
+}
+
+function findExistingDonaturByIdentity(donaturList, identity = {}) {
+  const normalizedKode = normalizeIdentity(identity.kode_donatur || identity.kodeDonatur || identity.kode);
+  const normalizedNik = normalizeIdentity(identity.nik);
+  const normalizedEmail = normalizeIdentity(identity.email).toLowerCase();
+  const normalizedPhone = normalizeIdentity(identity.no_hp || identity.nomor_hp || identity.phone).replace(/\s/g, '');
+
+  return (
+    donaturList.find((item) => {
+      const itemKode = normalizeIdentity(item?.kode_donatur || item?.kodeDonatur || item?.kode);
+      const itemNik = normalizeIdentity(item?.nik);
+      const itemEmail = normalizeIdentity(item?.email).toLowerCase();
+      const itemPhone = normalizeIdentity(item?.no_hp || item?.nomor_hp || item?.phone).replace(/\s/g, '');
+
+      return (
+        (normalizedKode && itemKode === normalizedKode) ||
+        (normalizedNik && itemNik === normalizedNik) ||
+        (normalizedEmail && itemEmail === normalizedEmail) ||
+        (normalizedPhone && itemPhone === normalizedPhone)
+      );
+    }) || null
+  );
+}
+
 function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const {
     selectedJenis: initialSelectedJenis = null,
     selectedDetail: initialSelectedDetail = null,
@@ -108,25 +168,12 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const [expandedPaymentMethodCode, setExpandedPaymentMethodCode] = useState('');
   const [nominal, setNominal] = useState('');
   const [catatanDonatur, setCatatanDonatur] = useState('');
-  const [guestIdentity, setGuestIdentity] = useState({
-    nik: user?.donatur?.nik || user?.nik || '',
-    nama: user?.donatur?.nama || (user?.nama && user.nama !== 'Guest Donatur' ? user.nama : ''),
-    alamat: user?.donatur?.alamat || user?.alamat || '',
-    tempat_lahir: user?.donatur?.tempat_lahir || user?.tempat_lahir || '',
-    tanggal_lahir: user?.donatur?.tanggal_lahir || user?.tanggal_lahir || '',
-    jenis_kelamin: user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '',
-    agama: user?.donatur?.agama || user?.agama || '',
-    status_perkawinan: user?.donatur?.status_perkawinan || user?.status_perkawinan || '',
-    pekerjaan: user?.donatur?.pekerjaan || user?.pekerjaan || '',
-    kewarganegaraan: user?.donatur?.kewarganegaraan || user?.kewarganegaraan || 'Indonesia',
-    no_hp: user?.donatur?.no_hp || user?.no_hp || '',
-    email: user?.donatur?.email || user?.email || '',
-  });
   const [selectedJenis, setSelectedJenis] = useState(initialSelectedJenis);
   const [selectedDetail, setSelectedDetail] = useState(initialSelectedDetail);
   const [donationItems, setDonationItems] = useState([]);
   const [submitMessage, setSubmitMessage] = useState('');
   const [createdCheckout, setCreatedCheckout] = useState(null);
+  const [pendingQrisCheckout, setPendingQrisCheckout] = useState(null);
   const [selectedQrCode, setSelectedQrCode] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [qrImageError, setQrImageError] = useState(false);
@@ -135,6 +182,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const [qrImageCandidates, setQrImageCandidates] = useState([]);
   const [qrImageCandidateIndex, setQrImageCandidateIndex] = useState(0);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isGeneratingQr, setIsGeneratingQr] = useState(false);
   const paymentDropdownRef = useRef(null);
 
   const {
@@ -151,19 +199,6 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     loading: loadingDelete,
     error: errorDelete,
   } = useDeleteTransaksi();
-
-  const {
-    deleteDetailTransaksi,
-    // eslint-disable-next-line no-unused-vars
-    loading: loadingDeleteDetail,
-    // eslint-disable-next-line no-unused-vars
-    error: errorDeleteDetail,
-  } = useDeleteDetail_transaksi();
-
-  const {
-    putTransaksi,
-    loading: loadingUpdateTransaksi,
-  } = useUpdateTransaksi();
 
   // Normalisasi data himpun
   const himpunList = useMemo(() => {
@@ -228,7 +263,6 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     String(
       item?.kode_detail_himpun ||
         item?.kode_detail_himpun_himpun ||
-        item?.kode_detail_transaksi ||
         item?.kode ||
         item?.kode_detail ||
         item?.id ||
@@ -237,6 +271,15 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
 
   const getDetailHimpunName = (item) =>
     normalizeInlineText(item?.nama || item?.nama_detail_himpun || '');
+
+  const getDetailHimpunAccountNumber = (item) =>
+    normalizeInlineText(
+      item?.no_rek ||
+        item?.nomor_rekening ||
+        item?.rekening ||
+        item?.noRek ||
+        ''
+    );
 
   const selectedHimpun = useMemo(
     () => himpunList.find((item) => getHimpunCode(item) === selectedHimpunCode) || null,
@@ -266,27 +309,32 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
 
   const paymentMethodsWithDetails = useMemo(
     () =>
-      himpunList.map((item) => {
-        const code = getHimpunCode(item);
-        const details = detailHimpunList.filter((detail) => {
-          const itemKodeHimpun = String(
-            detail?.kode_himpun ||
-              detail?.himpun_kode ||
-              detail?.kode_himpun_id ||
-              detail?.himpun?.kode_himpun ||
-              ''
-          ).trim();
+      himpunList
+        .map((item) => {
+          const code = getHimpunCode(item);
+          const details = detailHimpunList.filter((detail) => {
+            const itemKodeHimpun = String(
+              detail?.kode_himpun ||
+                detail?.himpun_kode ||
+                detail?.kode_himpun_id ||
+                detail?.himpun?.kode_himpun ||
+                ''
+            ).trim();
 
-          return itemKodeHimpun === code;
-        });
+            return itemKodeHimpun === code;
+          });
 
-        return {
-          ...item,
-          code,
-          label: getHimpunName(item) || code,
-          details,
-        };
-      }),
+          return {
+            ...item,
+            code,
+            label: getHimpunName(item) || code,
+            details,
+          };
+        })
+        .filter((item) => {
+          const normalizedLabel = normalizeDonationLabel(item.label);
+          return normalizedLabel !== 'cash' && normalizedLabel !== 'tunai';
+        }),
     [detailHimpunList, himpunList]
   );
 
@@ -312,8 +360,37 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     [jenisDonasiList, forcedJenisKey]
   );
 
+  const guestIdentityDefaults = useMemo(
+    () => ({
+      nik: String(user?.donatur?.nik || user?.nik || '').trim(),
+      nama: String(user?.donatur?.nama || (user?.nama && user.nama !== 'Guest Donatur' ? user.nama : '') || '').trim(),
+      alamat: String(user?.donatur?.alamat || user?.alamat || '').trim(),
+      tempat_lahir: String(user?.donatur?.tempat_lahir || user?.tempat_lahir || '').trim(),
+      tanggal_lahir: String(user?.donatur?.tanggal_lahir || user?.tanggal_lahir || '').trim(),
+      jenis_kelamin: String(user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '').trim(),
+      agama: String(user?.donatur?.agama || user?.agama || '').trim(),
+      status_perkawinan: String(user?.donatur?.status_perkawinan || user?.status_perkawinan || '').trim(),
+      pekerjaan: String(user?.donatur?.pekerjaan || user?.pekerjaan || '').trim(),
+      kewarganegaraan: String(user?.donatur?.kewarganegaraan || user?.kewarganegaraan || ' ').trim(),
+      no_hp: String(user?.donatur?.no_hp || user?.no_hp || '').trim(),
+      email: String(user?.donatur?.email || user?.email || '').trim(),
+    }),
+    [user]
+  );
+
+  const [guestIdentityForm, setGuestIdentityForm] = useState(guestIdentityDefaults);
+
+  const getJenisIdentity = (item) =>
+    normalizeIdentity(
+      item?.kode_jenis_donasi ||
+      item?.kode_jenis ||
+      item?.kode ||
+      item?.id_jenis_donasi ||
+      item?.id
+    );
+
   const getDetailIdentity = (detail) =>
-    String(
+    normalizeIdentity(
       detail?.id ||
         detail?.id_detail_donasi ||
         detail?.kode_detail_donasi ||
@@ -327,14 +404,16 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const filteredDetailByJenis = useMemo(() => {
     if (!selectedJenis) return [];
 
-    const idJenis =
-      selectedJenis.id ||
-      selectedJenis.id_jenis_donasi ||
-      selectedJenis.jenis_donasi_id;
-    const kodeJenis =
+    const selectedJenisCode = normalizeIdentity(
       selectedJenis.kode_jenis_donasi ||
-      selectedJenis.kode ||
-      selectedJenis.kode_jenis;
+      selectedJenis.kode_jenis ||
+      selectedJenis.kode
+    );
+    const selectedJenisId = normalizeIdentity(
+      selectedJenis.id_jenis_donasi ||
+      selectedJenis.jenis_donasi_id ||
+      selectedJenis.id
+    );
     const namaJenis = (
       normalizeDonationLabel(
         selectedJenis.nama_donasi ||
@@ -346,14 +425,30 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     const namaJenisTokens = namaJenis.split(' ').filter(Boolean);
 
     return detailDonasiList.filter((detail) => {
-      const matchById =
-        idJenis &&
-        (String(detail.id_jenis_donasi) === String(idJenis) ||
-          String(detail.jenis_donasi_id) === String(idJenis));
+      const detailJenisCode = normalizeIdentity(
+        detail.kode_jenis_donasi ||
+        detail.kode_jenis ||
+        detail.jenis_donasi?.kode_jenis_donasi ||
+        detail.jenis_donasi?.kode_jenis ||
+        detail.jenisDonasi?.kode_jenis_donasi ||
+        detail.jenisDonasi?.kode_jenis
+      );
+      const detailJenisId = normalizeIdentity(
+        detail.id_jenis_donasi ||
+        detail.jenis_donasi_id ||
+        detail.jenis_donasi?.id_jenis_donasi ||
+        detail.jenis_donasi?.id ||
+        detail.jenisDonasi?.id_jenis_donasi ||
+        detail.jenisDonasi?.id
+      );
+
       const matchByKode =
-        kodeJenis &&
-        (String(detail.kode_jenis_donasi) === String(kodeJenis) ||
-          String(detail.kode_jenis) === String(kodeJenis));
+        selectedJenisCode &&
+        detailJenisCode === selectedJenisCode;
+      const matchById =
+        !matchByKode &&
+        selectedJenisId &&
+        detailJenisId === selectedJenisId;
       const detailJenisNama = normalizeDonationLabel(
         detail.jenis_donasi?.nama_donasi ||
         detail.jenis_donasi?.nama ||
@@ -410,17 +505,11 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     setDonationItems([]);
     setSubmitMessage('');
     setSelectedQrCode(null);
+    setPendingQrisCheckout(null);
+    setShowCancelConfirm(false);
     setQrImageUrl('');
     setQrImageCandidates([]);
     setQrImageCandidateIndex(0);
-  };
-
-  const handleGuestIdentityChange = (e) => {
-    const { name, value } = e.target;
-    setGuestIdentity((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
   };
 
   useEffect(() => {
@@ -447,11 +536,38 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (isGuest) {
+      setGuestIdentityForm(guestIdentityDefaults);
+    }
+  }, [guestIdentityDefaults, isGuest]);
+
   const resetAfterSuccess = () => {
     setTimeout(() => {
+      setPendingQrisCheckout(null);
       setCreatedCheckout(null);
       resetForm();
     }, 5000);
+  };
+
+  const clearQrModalState = () => {
+    setShowCancelConfirm(false);
+    setShowQrModal(false);
+    setQrImageError(false);
+    setQrImageBase64(null);
+    setQrImageUrl('');
+    setQrImageCandidates([]);
+    setQrImageCandidateIndex(0);
+    setSelectedQrCode(null);
+  };
+
+  const handleGuestIdentityChange = (event) => {
+    const { name, value } = event.target;
+    setGuestIdentityForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+    setSubmitMessage('');
   };
 
   const getNormalizedApiUrl = () => {
@@ -497,6 +613,293 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     }
 
     return candidates;
+  };
+
+  const toDataUrlIfNeeded = (value) => {
+    const rawValue = String(value || '').trim();
+
+    if (!rawValue) return '';
+    if (rawValue.startsWith('data:image/')) return rawValue;
+    if (/^https?:\/\//i.test(rawValue)) return rawValue;
+    if (rawValue.startsWith('/')) return rawValue;
+    if (rawValue.startsWith('uploads/')) return rawValue;
+
+    const normalizedBase64 = rawValue.replace(/\s/g, '');
+    const looksLikeBase64 =
+      /^[A-Za-z0-9+/=]+$/.test(normalizedBase64) &&
+      normalizedBase64.length > 100;
+
+    if (looksLikeBase64) {
+      return `data:image/png;base64,${normalizedBase64}`;
+    }
+
+    return rawValue;
+  };
+
+  const looksLikeQrImageValue = (value) => {
+    const rawValue = String(value || '').trim();
+
+    if (!rawValue) return false;
+    if (rawValue.startsWith('data:image/')) return true;
+    if (/^https?:\/\//i.test(rawValue) && /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(rawValue)) return true;
+    if (/^\/?uploads\//i.test(rawValue)) return true;
+    if (/^\/?api\/uploads\//i.test(rawValue)) return true;
+    if (/\.(png|jpe?g|webp|gif|svg)$/i.test(rawValue)) return true;
+
+    const normalizedBase64 = rawValue.replace(/\s/g, '');
+    return /^[A-Za-z0-9+/=]+$/.test(normalizedBase64) && normalizedBase64.length > 100;
+  };
+
+  const looksLikeQrisPayload = (value) => {
+    const rawValue = String(value || '').trim();
+
+    if (!rawValue) return false;
+    if (looksLikeQrImageValue(rawValue)) return false;
+
+    return rawValue.startsWith('000201');
+  };
+
+  const buildQrImageFromPayload = (value) => {
+    const rawValue = String(value || '').trim();
+
+    if (!rawValue) return '';
+
+    return `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(rawValue)}`;
+  };
+
+  const extractGeneratedQrPayload = (response) => {
+    if (!response || typeof response !== 'object') return null;
+
+    const queue = [response];
+    const visited = new Set();
+
+    while (queue.length) {
+      const current = queue.shift();
+
+      if (!current || typeof current !== 'object' || visited.has(current)) {
+        continue;
+      }
+
+      visited.add(current);
+
+      const imageValue =
+        current.qr_image ||
+        current.qrImage ||
+        current.image_qrcode ||
+        current.imageQrCode ||
+        current.qrcode_image ||
+        current.qrcodeImage ||
+        current.qr_code ||
+        current.qrCode ||
+        current.qrcode ||
+        current.image ||
+        current.image_url ||
+        current.imageUrl ||
+        current.url;
+
+      if (typeof imageValue === 'string' && imageValue.trim()) {
+        return current;
+      }
+
+      const stringCandidate = Object.entries(current).find(([, value]) =>
+        typeof value === 'string' && looksLikeQrImageValue(value)
+      );
+
+      if (stringCandidate) {
+        return {
+          ...current,
+          image_qrcode: stringCandidate[1],
+        };
+      }
+
+      const qrisPayloadCandidate = Object.entries(current).find(([, value]) =>
+        typeof value === 'string' && looksLikeQrisPayload(value)
+      );
+
+      if (qrisPayloadCandidate) {
+        return {
+          ...current,
+          qris: qrisPayloadCandidate[1],
+          image_qrcode: buildQrImageFromPayload(qrisPayloadCandidate[1]),
+        };
+      }
+
+      Object.values(current).forEach((value) => {
+        if (Array.isArray(value)) {
+          value.forEach((item) => {
+            if (item && typeof item === 'object') {
+              queue.push(item);
+            }
+          });
+          return;
+        }
+
+        if (value && typeof value === 'object') {
+          queue.push(value);
+        }
+      });
+    }
+
+    return null;
+  };
+
+  const getGeneratedQrImageValue = (payload) => {
+    if (!payload || typeof payload !== 'object') return '';
+
+    const directValue = (
+      payload.qr_image ||
+      payload.qrImage ||
+      payload.image_qrcode ||
+      payload.imageQrCode ||
+      payload.qrcode_image ||
+      payload.qrcodeImage ||
+      payload.qr_code ||
+      payload.qrCode ||
+      payload.qrcode ||
+      payload.qris ||
+      payload.qris_string ||
+      payload.qrisString ||
+      payload.qr_string ||
+      payload.qrString ||
+      payload.image ||
+      payload.image_url ||
+      payload.imageUrl ||
+      payload.url ||
+      ''
+    );
+
+    if (directValue) {
+      if (looksLikeQrisPayload(directValue)) {
+        return buildQrImageFromPayload(directValue);
+      }
+
+      return directValue;
+    }
+
+    const fallbackEntry = Object.entries(payload).find(([, value]) =>
+      typeof value === 'string' && looksLikeQrImageValue(value)
+    );
+
+    if (fallbackEntry?.[1]) {
+      return fallbackEntry[1];
+    }
+
+    const qrisEntry = Object.entries(payload).find(([, value]) =>
+      typeof value === 'string' && looksLikeQrisPayload(value)
+    );
+
+    return qrisEntry?.[1] ? buildQrImageFromPayload(qrisEntry[1]) : '';
+  };
+
+  const resolveActiveQrCode = () => {
+    if (!qrCodeData) return null;
+
+    const candidates = [];
+
+    if (Array.isArray(qrCodeData)) {
+      candidates.push(...qrCodeData);
+    } else if (Array.isArray(qrCodeData?.qrcode)) {
+      candidates.push(...qrCodeData.qrcode);
+    } else if (Array.isArray(qrCodeData?.data)) {
+      candidates.push(...qrCodeData.data);
+    } else if (typeof qrCodeData === 'object') {
+      candidates.push(qrCodeData);
+      Object.values(qrCodeData).forEach((value) => {
+        if (Array.isArray(value)) {
+          candidates.push(...value);
+        } else if (value && typeof value === 'object') {
+          candidates.push(value);
+        }
+      });
+    }
+
+    return (
+      candidates.find((item) => {
+        if (!item || typeof item !== 'object') return false;
+
+        const itemId = String(
+          item.id_qrcode ||
+          item.id ||
+          item.qrcode_id ||
+          ''
+        ).trim();
+
+        return Boolean(itemId);
+      }) || null
+    );
+  };
+
+  const generateDynamicQrCode = async ({
+    checkoutSummary,
+    transaksi,
+    kodeDonatur,
+    jalurPembayaran,
+    namaMetodePembayaran,
+  }) => {
+    const totalDonasi = Number(
+      checkoutSummary?.total_donasi || transaksi?.jumlah_donasi || 0
+    );
+
+    if (!totalDonasi || totalDonasi <= 0) {
+      throw new Error('Nominal donasi tidak valid untuk generate QRIS.');
+    }
+
+    const activeQrCode = resolveActiveQrCode();
+    const activeQrCodeId = String(
+      activeQrCode?.id_qrcode ||
+      activeQrCode?.id ||
+      activeQrCode?.qrcode_id ||
+      ''
+    ).trim();
+
+    if (!activeQrCodeId) {
+      throw new Error('QRIS aktif tidak ditemukan. Pastikan data QR code aktif tersedia di backend.');
+    }
+
+    const payload = {
+      id_qrcode: activeQrCodeId,
+      nominal_default: totalDonasi,
+      nominal: totalDonasi,
+      amount: totalDonasi,
+      jumlah_donasi: totalDonasi,
+      jumlah: totalDonasi,
+      kode_transaksi: transaksi?.kode_transaksi || '',
+      kode_donatur: kodeDonatur || '',
+      metode_pembayaran: namaMetodePembayaran || 'QRIS',
+      jalur_pembayaran: jalurPembayaran || 'QRIS',
+    };
+
+    const response = await api.post(endpointsUser.qrcode.generate, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const responseData = response?.data;
+    const qrPayload =
+      extractGeneratedQrPayload(responseData) ||
+      extractGeneratedQrPayload(responseData?.data) ||
+      extractGeneratedQrPayload(responseData?.result);
+    const qrImageValue = toDataUrlIfNeeded(getGeneratedQrImageValue(qrPayload));
+
+    if (!qrPayload || !qrImageValue) {
+      console.error('Response generate QR tidak memiliki QR dinamis yang bisa dipakai:', {
+        activeQrCode,
+        requestPayload: payload,
+        responseData,
+        transaksi,
+      });
+      throw new Error('Backend belum mengirim hasil QRIS dinamis pada endpoint generate.');
+    }
+
+    return {
+      ...qrPayload,
+      id_qrcode: qrPayload?.id_qrcode || activeQrCodeId,
+      nominal: totalDonasi,
+      amount: totalDonasi,
+      kode_transaksi: transaksi?.kode_transaksi || qrPayload?.kode_transaksi || '',
+      image_qrcode: qrImageValue,
+    };
   };
 
   const downloadQrCode = () => {
@@ -727,20 +1130,29 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     setShowCancelConfirm(true);
   };
 
+  const isDraftTransactionId = (transactionId) =>
+    typeof transactionId === 'string' && /^(DIRECT|ITEM)-/.test(transactionId);
+
   const handleCancelDonation = async () => {
-    if (!createdCheckout?.transactions?.length) return;
+    const persistedTransactions = (createdCheckout?.transactions || []).filter((transaksi) => {
+      const transactionId = transaksi?.id || transaksi?.id_transaksi;
+      return transactionId && !isDraftTransactionId(transactionId);
+    });
+
+    if (!persistedTransactions.length) {
+      clearQrModalState();
+      setPendingQrisCheckout(null);
+      setCreatedCheckout(null);
+      setSubmitMessage('Pembayaran QRIS dibatalkan. Data transaksi belum disimpan.');
+      return;
+    }
 
     try {
-      for (const transaksi of createdCheckout.transactions) {
-        const transactionId = transaksi.id || transaksi.kode_transaksi;
-        const detailTransaksiId = transaksi.detail_transaksi_id;
+      for (const transaksi of persistedTransactions) {
+        const transactionId = transaksi.id || transaksi.id_transaksi;
 
-        if (!transactionId) {
+        if (!transactionId || isDraftTransactionId(transactionId)) {
           continue;
-        }
-
-        if (detailTransaksiId) {
-          await deleteDetailTransaksi(detailTransaksiId);
         }
 
         const success = await deleteTransaksi(transactionId);
@@ -750,13 +1162,8 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
         }
       }
 
-      setShowCancelConfirm(false);
-      setShowQrModal(false);
-      setQrImageError(false);
-      setQrImageBase64(null);
-      setQrImageUrl('');
-      setQrImageCandidates([]);
-      setQrImageCandidateIndex(0);
+      clearQrModalState();
+      setPendingQrisCheckout(null);
       setCreatedCheckout(null);
       setSubmitMessage('Semua item donasi pada checkout ini telah dibatalkan.');
       resetForm();
@@ -767,70 +1174,30 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   };
 
   const closeQrModal = async () => {
-    if (!createdCheckout?.transactions?.length) {
-      setShowQrModal(false);
-      return;
-    }
-
-    for (const transaksi of createdCheckout.transactions) {
-      const transactionId = transaksi.id || transaksi.id_transaksi;
-      if (!transactionId) {
-        alert('ID transaksi tidak ditemukan. Silakan cek riwayat transaksi Anda.');
+    try {
+      if (!pendingQrisCheckout?.itemsToProcess?.length) {
+        setShowQrModal(false);
         return;
       }
 
-      const updateResponse = await putTransaksi(
-        transactionId,
-        transaksi.kode_transaksi,
-        transaksi.kode_donatur,
-        transaksi.kode_jenis_donasi,
-        transaksi.kode_detail_donasi,
-        transaksi.kode_user,
-        transaksi.kode_himpun,
-        transaksi.kode_detail_transaksi,
-        transaksi.jumlah_donasi,
-        'diproses',
-        transaksi.catatan
-      );
+      const paymentContext = {
+        createdCheckout,
+        pendingQrisCheckout,
+        selectedQrCode,
+        qrImageBase64,
+        qrImageUrl,
+      };
 
-      if (!updateResponse) {
-        alert('Status pembayaran belum berhasil dikonfirmasi. Silakan coba lagi.');
-        return;
-      }
+      clearQrModalState();
+      navigate('/transaksi/konfirmasi-pembayaran', {
+        state: {
+          paymentContext,
+        },
+      });
+    } catch (error) {
+      console.error('Error confirming QRIS payment:', error);
+      setSubmitMessage(error?.message || 'Halaman upload bukti pembayaran gagal dibuka.');
     }
-
-    setCreatedCheckout((prev) => (
-      prev
-        ? {
-            ...prev,
-            status: 'diproses',
-            transactions: prev.transactions.map((item) => ({
-              ...item,
-              status: 'diproses',
-              status_transaksi: 'diproses',
-            })),
-          }
-        : prev
-    ));
-    setShowQrModal(false);
-    setQrImageError(false);
-    setQrImageBase64(null);
-    setQrImageUrl('');
-    setQrImageCandidates([]);
-    setQrImageCandidateIndex(0);
-    setSubmitMessage('Pembayaran Anda sedang diverifikasi. Status transaksi berubah menjadi diproses.');
-    addNotification({
-      title: 'Pembayaran QRIS Dikonfirmasi',
-      message: 'Pembayaran Anda sedang kami verifikasi. Silakan cek riwayat transaksi untuk status terbaru.',
-      userType: 'donatur',
-      ...(createdCheckout?.kode_donatur ? { audienceKey: createdCheckout.kode_donatur } : {}),
-    });
-    addNotification({
-      title: 'Konfirmasi Pembayaran dari Donatur',
-      message: `Donatur telah mengkonfirmasi pembayaran untuk ${createdCheckout.transactions.length} transaksi dengan total ${formatCurrency(createdCheckout.total_donasi)}. Silakan cek dan verifikasi transaksi tersebut.`,
-      userType: 'admin',
-    });
-    resetAfterSuccess();
   };
 
   const handleSelectPaymentMethod = (methodCode) => {
@@ -868,8 +1235,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const handleJenisChange = (e) => {
     const value = e.target.value;
     const foundJenis = jenisDonasiList.find((item) => {
-      const itemKode = item.kode_jenis_donasi || item.kode || item.kode_jenis;
-      return String(itemKode) === value;
+      return getJenisIdentity(item) === normalizeIdentity(value);
     });
 
     setSelectedJenis(foundJenis || null);
@@ -1012,6 +1378,34 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
       };
     }
 
+    const matchedDonatur = findExistingDonaturByIdentity(donaturList, {
+      ...normalizedGuestIdentity,
+      kode_donatur: existingKodeDonatur,
+    });
+    const matchedKodeDonatur = normalizeIdentity(
+      matchedDonatur?.kode_donatur ||
+      matchedDonatur?.kodeDonatur ||
+      matchedDonatur?.kode
+    );
+
+    if (matchedKodeDonatur) {
+      const guestUser = {
+        ...(currentUser?.isGuest ? currentUser : {}),
+        ...normalizedGuestIdentity,
+        kode_donatur: matchedKodeDonatur,
+        isGuest: true,
+        isRegister: 0,
+        is_register: 0,
+      };
+
+      localStorage.setItem('guest_user', JSON.stringify(guestUser));
+
+      return {
+        kodeDonatur: matchedKodeDonatur,
+        guestUser,
+      };
+    }
+
     const createdGuestDonatur = await postDonatur(
       normalizedGuestIdentity.nik,
       normalizedGuestIdentity.nama,
@@ -1033,16 +1427,13 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
       throw new Error('Gagal membuat data donatur tamu. Silakan periksa koneksi internet dan coba lagi.');
     }
 
-    const guestDonaturEntity = createdGuestDonatur?.donatur || createdGuestDonatur;
+    const guestDonaturEntity = extractDonaturEntity(createdGuestDonatur);
 
     if (!guestDonaturEntity || typeof guestDonaturEntity !== 'object') {
       throw new Error('Response data donatur tamu tidak valid. Hubungi admin jika masalah berlanjut.');
     }
 
-    const kodeDonatur =
-      guestDonaturEntity?.kode_donatur ||
-      guestDonaturEntity?.kode ||
-      '';
+    const kodeDonatur = extractKodeDonatur(createdGuestDonatur);
 
     if (!kodeDonatur || kodeDonatur.trim() === '') {
       console.error('Guest donatur entity structure:', guestDonaturEntity);
@@ -1063,6 +1454,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
       kewarganegaraan: normalizedGuestIdentity.kewarganegaraan,
       email: normalizedGuestIdentity.email,
       no_hp: normalizedGuestIdentity.no_hp,
+      kode_donatur: kodeDonatur,
       isGuest: true,
       isRegister: 0,
       is_register: 0,
@@ -1079,9 +1471,8 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   const validateGuestIdentity = (identity) => {
     if (!identity) return 'Identitas guest belum tersedia.';
 
-    // Validasi field wajib
-    if (!identity.nik || !identity.nama || !identity.jenis_kelamin || !identity.no_hp || !identity.email) {
-      return 'NIK, nama, jenis kelamin, nomor HP, dan email guest wajib diisi.';
+    if (!identity.nama || !identity.jenis_kelamin || !identity.no_hp || !identity.email) {
+      return 'Data guest belum lengkap. Lengkapi nama, jenis kelamin, nomor HP, dan email di form identitas tamu.';
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1136,18 +1527,18 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
     setSubmitMessage('');
     const normalizedGuestIdentity = isGuest
       ? {
-            nik: String(guestIdentity.nik || user?.donatur?.nik || user?.nik || '').trim(),
-            nama: String(guestIdentity.nama || user?.donatur?.nama || user?.nama || '').trim(),
-            alamat: String(guestIdentity.alamat || user?.donatur?.alamat || user?.alamat || '').trim(),
-            tempat_lahir: String(guestIdentity.tempat_lahir || user?.donatur?.tempat_lahir || user?.tempat_lahir || '').trim(),
-            tanggal_lahir: String(guestIdentity.tanggal_lahir || user?.donatur?.tanggal_lahir || user?.tanggal_lahir || '').trim(),
-            jenis_kelamin: String(guestIdentity.jenis_kelamin || user?.donatur?.jenis_kelamin || user?.jenis_kelamin || '').trim(),
-            agama: String(guestIdentity.agama || user?.donatur?.agama || user?.agama || '').trim(),
-            status_perkawinan: String(guestIdentity.status_perkawinan || user?.donatur?.status_perkawinan || user?.status_perkawinan || '').trim(),
-            pekerjaan: String(guestIdentity.pekerjaan || user?.donatur?.pekerjaan || user?.pekerjaan || '').trim(),
-            kewarganegaraan: String(guestIdentity.kewarganegaraan || user?.donatur?.kewarganegaraan || user?.kewarganegaraan || 'Indonesia').trim(),
-            no_hp: String(guestIdentity.no_hp || user?.donatur?.no_hp || user?.no_hp || '').trim(),
-            email: String(guestIdentity.email || user?.donatur?.email || user?.email || '').trim(),
+            nik: String(guestIdentityForm.nik || '').trim(),
+            nama: String(guestIdentityForm.nama || '').trim(),
+            alamat: String(guestIdentityForm.alamat || '').trim(),
+            tempat_lahir: String(guestIdentityForm.tempat_lahir || '').trim(),
+            tanggal_lahir: String(guestIdentityForm.tanggal_lahir || '').trim(),
+            jenis_kelamin: String(guestIdentityForm.jenis_kelamin || '').trim(),
+            agama: String(guestIdentityForm.agama || '').trim(),
+            status_perkawinan: String(guestIdentityForm.status_perkawinan || '').trim(),
+            pekerjaan: String(guestIdentityForm.pekerjaan || '').trim(),
+            kewarganegaraan: String(guestIdentityForm.kewarganegaraan || '').trim(),
+            no_hp: String(guestIdentityForm.no_hp || '').trim(),
+            email: String(guestIdentityForm.email || '').trim(),
         }
       : null;
 
@@ -1188,12 +1579,14 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
       const namaMetodePembayaran = isQrisMethod
         ? jalurPembayaran
         : getDetailHimpunName(selectedPaymentDetail);
+      const nomorRekeningPembayaran = isQrisMethod
+        ? ''
+        : getDetailHimpunAccountNumber(selectedPaymentDetail);
       const kodeDetailTransaksi = isQrisMethod
         ? ''
         : getDetailHimpunCode(selectedPaymentDetail);
 
       let kodeDonatur = findRegisteredDonaturCode(user);
-      let effectiveUser = user;
 
       const isRegisterFlag =
         user?.donatur?.isRegister ??
@@ -1219,8 +1612,6 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
         );
 
         kodeDonatur = guestDonaturResult?.kodeDonatur || '';
-        effectiveUser = guestDonaturResult?.guestUser || user;
-
         if (!kodeDonatur || !String(kodeDonatur).trim()) {
           throw new Error('Data donatur guest belum berhasil dibuat, jadi transaksi tidak dapat dilanjutkan.');
         }
@@ -1230,13 +1621,159 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
         throw new Error('Kode donatur tidak ditemukan. Silakan login ulang atau lengkapi identitas guest terlebih dahulu.');
       }
 
+      const itemsToProcess = effectiveDonationItems.slice(0, 1);
+      const transactionSeed = Date.now();
+
+      if (isQrisMethod) {
+        const draftTransactions = itemsToProcess.map((item, index) => ({
+          ...item,
+          kode_transaksi: `TRX-${transactionSeed}-${index + 1}`,
+          kode_donatur: kodeDonatur,
+          kode_himpun: kodeHimpun,
+          kode_detail_transaksi: kodeDetailTransaksi,
+          nama_jenis_donasi: item.namaJenis,
+          nama_detail_donasi: item.namaDetail,
+          jumlah_donasi: Number(item.nominal || 0),
+          metode_pembayaran: namaMetodePembayaran,
+          jalur_pembayaran: jalurPembayaran,
+          status: 'menunggu konfirmasi',
+          status_transaksi: 'menunggu konfirmasi',
+        }));
+
+        const checkoutSummary = {
+          transactions: draftTransactions,
+          total_donasi: draftTransactions.reduce(
+            (total, item) => total + Number(item.jumlah_donasi || 0),
+            0
+          ),
+          total_item: draftTransactions.length,
+          metode_pembayaran: namaMetodePembayaran,
+          jalur_pembayaran: jalurPembayaran,
+          status: 'menunggu konfirmasi',
+          kode_donatur: kodeDonatur,
+        };
+
+        setCreatedCheckout(checkoutSummary);
+        setPendingQrisCheckout({
+          itemsToProcess: draftTransactions,
+          kodeDonatur,
+          kodeUser,
+          kodeHimpun,
+          kodeDetailTransaksi,
+          finalCatatanDonatur,
+          isRegisterFlag,
+          namaMetodePembayaran,
+          jalurPembayaran,
+        });
+
+        const firstTransaction = draftTransactions[0] || null;
+
+        if (!firstTransaction) {
+          throw new Error('Draft transaksi QRIS tidak ditemukan.');
+        }
+
+        setIsGeneratingQr(true);
+        setSelectedQrCode({
+          kode_transaksi: firstTransaction.kode_transaksi,
+          nominal: checkoutSummary.total_donasi,
+        });
+        setQrImageError(false);
+        setQrImageBase64(null);
+        setQrImageUrl('');
+        setQrImageCandidates([]);
+        setQrImageCandidateIndex(0);
+        setShowQrModal(true);
+
+        try {
+          const generatedQrCode = await generateDynamicQrCode({
+            checkoutSummary,
+            transaksi: firstTransaction,
+            kodeDonatur,
+            jalurPembayaran,
+            namaMetodePembayaran,
+          });
+          const imagePath = generatedQrCode.image_qrcode;
+
+          setSelectedQrCode(generatedQrCode);
+
+          if (imagePath.startsWith('data:image/')) {
+            setQrImageBase64(imagePath);
+          } else {
+            fetchResolvedQrImage(imagePath);
+          }
+        } catch (generateQrError) {
+          console.error('Gagal generate QRIS dinamis:', generateQrError);
+          setQrImageError(true);
+          setSubmitMessage(
+            generateQrError.message || 'QRIS dinamis tidak berhasil dibuat. Silakan coba lagi.'
+          );
+        } finally {
+          setIsGeneratingQr(false);
+        }
+
+        return;
+      }
+
+      if (!isQrisMethod) {
+        const draftTransactions = itemsToProcess.map((item, index) => ({
+          ...item,
+          kode_transaksi: `TRX-${transactionSeed}-${index + 1}`,
+          kode_donatur: kodeDonatur,
+          kode_himpun: kodeHimpun,
+          kode_detail_transaksi: kodeDetailTransaksi,
+          nama_jenis_donasi: item.namaJenis,
+          nama_detail_donasi: item.namaDetail,
+          jumlah_donasi: Number(item.nominal || 0),
+          metode_pembayaran: namaMetodePembayaran,
+          jalur_pembayaran: jalurPembayaran,
+          no_rek: nomorRekeningPembayaran,
+          status: 'menunggu konfirmasi',
+          status_transaksi: 'menunggu konfirmasi',
+        }));
+
+        const checkoutSummary = {
+          transactions: draftTransactions,
+          total_donasi: draftTransactions.reduce(
+            (total, item) => total + Number(item.jumlah_donasi || 0),
+            0
+          ),
+          total_item: draftTransactions.length,
+          metode_pembayaran: namaMetodePembayaran,
+          jalur_pembayaran: jalurPembayaran,
+          no_rek: nomorRekeningPembayaran,
+          status: 'menunggu konfirmasi',
+          kode_donatur: kodeDonatur,
+        };
+
+        setCreatedCheckout(checkoutSummary);
+        setPendingQrisCheckout({
+          itemsToProcess: draftTransactions,
+          kodeDonatur,
+          kodeUser,
+          kodeHimpun,
+          kodeDetailTransaksi,
+          finalCatatanDonatur,
+          isRegisterFlag,
+          namaMetodePembayaran,
+          jalurPembayaran,
+          paymentType: 'bank',
+          bankAccountNumber: nomorRekeningPembayaran,
+          bankAccountLabel: namaMetodePembayaran,
+        });
+        setSelectedQrCode(null);
+        setQrImageError(false);
+        setQrImageBase64(null);
+        setQrImageUrl('');
+        setQrImageCandidates([]);
+        setQrImageCandidateIndex(0);
+        setShowQrModal(true);
+        return;
+      }
+
       const createdTransactions = [];
 
-      // **FITUR BARU: Restrict ke hanya 1 transaksi per session**
-      const itemsToProcess = effectiveDonationItems.slice(0, 1); // Ambil maksimal 1 item pertama
-
       for (const item of itemsToProcess) {
-        const kodeTransaksi = `TRX-${Date.now()}-${createdTransactions.length + 1}`;
+        const kodeTransaksi = `TRX-${transactionSeed}-${createdTransactions.length + 1}`;
 
         const transaksiResponse = await postTransaksi(
           kodeTransaksi,
@@ -1255,25 +1792,21 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
         );
 
         const transaksiData = transaksiResponse.transaksi || transaksiResponse;
+        const generatedQrPayload =
+          extractGeneratedQrPayload(transaksiResponse) ||
+          extractGeneratedQrPayload(transaksiData);
         createdTransactions.push({
           ...transaksiData,
-          detail_transaksi_id: null,
-          kode_detail_transaksi: transaksiData.kode_detail_transaksi || kodeDetailTransaksi,
+          raw_response: transaksiResponse,
+          generated_qr: generatedQrPayload,
           metode_pembayaran:
             transaksiData.metode_pembayaran ||
             transaksiData.metode ||
             transaksiData.jalur_pembayaran ||
-            transaksiData.nama_detail_transaksi ||
             namaMetodePembayaran,
           jalur_pembayaran:
             transaksiData.jalur_pembayaran ||
             jalurPembayaran,
-          nama_detail_transaksi:
-            transaksiData.nama_detail_transaksi ||
-            transaksiData.metode_pembayaran ||
-            transaksiData.metode ||
-            transaksiData.jalur_pembayaran ||
-            namaMetodePembayaran,
           nama_jenis_donasi: item.namaJenis,
           nama_detail_donasi: item.namaDetail,
           jumlah_donasi: Number(item.nominal || 0),
@@ -1281,7 +1814,6 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
       }
 
       if (createdTransactions.length) {
-
         const checkoutSummary = {
           transactions: createdTransactions,
           total_donasi: createdTransactions.reduce(
@@ -1296,13 +1828,8 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
         };
 
         setCreatedCheckout(checkoutSummary);
-        addNotification({
-          title: 'Donasi Baru Masuk',
-          message: `Ada ${createdTransactions.length} transaksi donasi baru dari ${isGuest ? normalizedGuestIdentity.nama : effectiveUser?.donatur?.nama || effectiveUser?.nama || 'donatur'} dengan total ${formatCurrency(checkoutSummary.total_donasi)}.`,
-          userType: 'admin',
-        });
 
-        if (isQrisMethod) {
+        if (false && isQrisMethod) {
             console.log('=== QR Code Data (from /api/qrcode/active) ===');
             console.log('qrCodeData:', qrCodeData);
             console.log('qrCodeData JSON:', JSON.stringify(qrCodeData, null, 2));
@@ -1417,8 +1944,8 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-slate-100">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-3xl shadow-2xl border border-slate-200/50 w-full max-w-md text-center">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <div className="animate-spin h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
           <p className="text-slate-600 text-sm">Menyiapkan data transaksi...</p>
         </div>
@@ -1428,8 +1955,8 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 via-white to-slate-100">
-        <div className="bg-white/90 backdrop-blur-sm p-8 rounded-3xl shadow-2xl border border-red-200/50 w-full max-w-md text-center">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-full max-w-md rounded-2xl border border-red-200 bg-white p-8 text-center shadow-sm">
           <svg className="h-12 w-12 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
@@ -1440,16 +1967,42 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-100 py-10 px-6 lg:px-16">
+    <div className="min-h-screen bg-slate-50 py-10 px-6 lg:px-16">
       <div className="w-full space-y-8">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-slate-900 px-6 py-4 text-white">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">Transaksi Donasi</p>
+            <h1 className="mt-2 text-3xl font-bold lg:text-4xl">Pembayaran Donasi</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+              Lengkapi detail donasi, pilih metode pembayaran, lalu selesaikan proses transaksi dalam tampilan yang rapi dan konsisten dengan tema aplikasi.
+            </p>
+          </div>
+          <div className="grid gap-4 px-6 py-5 md:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tahap 1</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">Pilih Donasi</p>
+              <p className="mt-1 text-sm text-slate-600">Tentukan kategori dan program yang ingin Anda dukung.</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tahap 2</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">Atur Pembayaran</p>
+              <p className="mt-1 text-sm text-slate-600">Isi nominal, jalur pembayaran, dan catatan bila diperlukan.</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tahap 3</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">Konfirmasi</p>
+              <p className="mt-1 text-sm text-slate-600">Lakukan pembayaran dan tunggu verifikasi dari sistem.</p>
+            </div>
+          </div>
+        </div>
 
-       
+        
         {/* Form Pembayaran */}
         {!createdCheckout && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 md:p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+              <svg className="w-5 h-5 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
               </svg>
             </div>
@@ -1461,90 +2014,33 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
             onSubmit={handleCreateDetailTransaksi}
           >
             {isGuest && (
-              <div className="md:col-span-2 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <div className="mb-4">
                   <p className="text-sm font-bold text-slate-900">Identitas Tamu</p>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Karena Anda berdonasi sebagai tamu, lengkapi identitas berikut sebelum melanjutkan donasi. (<span className="text-red-600">*</span> = wajib diisi)
+                    Isi identitas tamu dan transaksi dalam satu form. Saat submit, sistem akan membuat data donatur tamu dulu, lalu melanjutkan ke transaksi.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {/* NIK (required) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">NIK <span className="text-red-600">*</span></label>
-                    <input
-                      type="text"
-                      name="nik"
-                      value={guestIdentity.nik}
-                      onChange={handleGuestIdentityChange}
-                      placeholder="Nomor induk kependudukan (KTP)"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                  </div>
-
-                  {/* Nama Lengkap (required) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Nama Lengkap <span className="text-red-600">*</span></label>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-800">Nama Lengkap <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       name="nama"
-                      value={guestIdentity.nama}
+                      value={guestIdentityForm.nama}
                       onChange={handleGuestIdentityChange}
                       placeholder="Masukkan nama lengkap"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     />
                   </div>
-
-                  {/* Alamat (optional) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Alamat</label>
-                    <input
-                      type="text"
-                      name="alamat"
-                      value={guestIdentity.alamat}
-                      onChange={handleGuestIdentityChange}
-                      placeholder="Masukkan alamat lengkap"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  {/* Tempat Lahir (optional) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Tempat Lahir</label>
-                    <input
-                      type="text"
-                      name="tempat_lahir"
-                      value={guestIdentity.tempat_lahir}
-                      onChange={handleGuestIdentityChange}
-                      placeholder="Masukkan tempat lahir"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  {/* Tanggal Lahir (optional) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Tanggal Lahir</label>
-                    <input
-                      type="date"
-                      name="tanggal_lahir"
-                      value={guestIdentity.tanggal_lahir}
-                      onChange={handleGuestIdentityChange}
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  {/* Jenis Kelamin (required) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Jenis Kelamin <span className="text-red-600">*</span></label>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-800">Jenis Kelamin <span className="text-red-500">*</span></label>
                     <select
                       name="jenis_kelamin"
-                      value={guestIdentity.jenis_kelamin}
+                      value={guestIdentityForm.jenis_kelamin}
                       onChange={handleGuestIdentityChange}
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     >
                       <option value="">Pilih jenis kelamin</option>
                       <option value="Laki-laki">Laki-laki</option>
@@ -1552,96 +2048,35 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                     </select>
                   </div>
 
-                  {/* Agama (optional) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Agama</label>
-                    <select
-                      name="agama"
-                      value={guestIdentity.agama}
-                      onChange={handleGuestIdentityChange}
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Pilih agama</option>
-                      <option value="Islam">Islam</option>
-                      <option value="Kristen">Kristen</option>
-                      <option value="Katolik">Katolik</option>
-                      <option value="Hindu">Hindu</option>
-                      <option value="Buddha">Buddha</option>
-                      <option value="Konghucu">Konghucu</option>
-                    </select>
-                  </div>
-
-                  {/* Status Perkawinan (optional) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Status Perkawinan</label>
-                    <select
-                      name="status_perkawinan"
-                      value={guestIdentity.status_perkawinan}
-                      onChange={handleGuestIdentityChange}
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Pilih status perkawinan</option>
-                      <option value="Belum Menikah">Belum Menikah</option>
-                      <option value="Menikah">Menikah</option>
-                      <option value="Cerai Hidup">Cerai Hidup</option>
-                      <option value="Cerai Mati">Cerai Mati</option>
-                    </select>
-                  </div>
-
-                  {/* Pekerjaan (optional) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Pekerjaan</label>
-                    <input
-                      type="text"
-                      name="pekerjaan"
-                      value={guestIdentity.pekerjaan}
-                      onChange={handleGuestIdentityChange}
-                      placeholder="Masukkan pekerjaan"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  {/* Kewarganegaraan (optional) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Kewarganegaraan</label>
-                    <input
-                      type="text"
-                      name="kewarganegaraan"
-                      value={guestIdentity.kewarganegaraan}
-                      onChange={handleGuestIdentityChange}
-                      placeholder="Contoh: Indonesia"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  {/* Nomor HP (required) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Nomor HP <span className="text-red-600">*</span></label>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-800">Nomor HP <span className="text-red-500">*</span></label>
                     <input
                       type="tel"
                       name="no_hp"
-                      value={guestIdentity.no_hp}
+                      value={guestIdentityForm.no_hp}
                       onChange={handleGuestIdentityChange}
                       placeholder="Contoh: 08123456789"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     />
                   </div>
 
-                  {/* Email (required) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-800">Email <span className="text-red-600">*</span></label>
+                  <div className="md:col-span-2">
+                    <label className="mb-2 block text-sm font-semibold text-slate-800">Email <span className="text-red-500">*</span></label>
                     <input
                       type="email"
                       name="email"
-                      value={guestIdentity.email}
+                      value={guestIdentityForm.email}
                       onChange={handleGuestIdentityChange}
                       placeholder="Masukkan email aktif"
-                      className="w-full rounded-xl border-2 border-slate-300 px-4 py-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     />
                   </div>
                 </div>
+                {(!guestIdentityForm.nama || !guestIdentityForm.jenis_kelamin || !guestIdentityForm.no_hp || !guestIdentityForm.email) && (
+                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    Lengkapi nama, jenis kelamin, nomor HP, dan email sebelum memproses donasi.
+                  </div>
+                )}
               </div>
             )}
 
@@ -1725,7 +2160,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                   </div>
                   <div className="h-3 bg-slate-200 rounded-full overflow-hidden border border-slate-300">
                     <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-300 shadow-md"
+                      className="h-full rounded-full bg-blue-900 transition-all duration-300"
                       style={{ width: `${Math.min((Number(nominal) / 100000) * 100, 100)}%` }}
                     ></div>
                   </div>
@@ -1760,7 +2195,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
               </button>
 
               {isPaymentDropdownOpen && (
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                   {paymentMethodsWithDetails.map((method) => {
                     const isExpanded = expandedPaymentMethodCode === method.code;
                     const isSelectedMethod = selectedHimpunCode === method.code;
@@ -1845,7 +2280,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                   loadingTransaksi ||
                   (!donationItems.length && !getCurrentDraftDonationItem())
                 }
-                className="w-full px-8 py-4 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-bold shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-[1.01] disabled:transform-none disabled:opacity-50 border border-blue-500 hover:border-blue-600"
+                className="w-full rounded-xl border border-blue-900 bg-blue-900 px-8 py-4 text-sm font-bold text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
               >
                 {loadingTransaksi ? (
                   <div className="flex items-center justify-center gap-3">
@@ -1865,17 +2300,17 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
           </form>
 
           {submitMessage && (
-            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
+            <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-700">
               {submitMessage}
             </div>
           )}
         </div>
         )}
 
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 md:p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
-              <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+              <svg className="w-5 h-5 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
@@ -1913,27 +2348,27 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
 
         {/* Success */}
         {createdCheckout && !showQrModal && (
-          <div className="bg-gradient-to-br from-green-50 via-white to-blue-50 border-2 border-green-300 rounded-3xl p-6 md:p-10 shadow-2xl">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-10">
             <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
                 <svg className="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
               </div>
-              <h3 className="text-2xl md:text-3xl font-bold text-green-700 mb-2">Pembayaran Berhasil! ✓</h3>
+              <h3 className="mb-2 text-2xl font-bold text-slate-900 md:text-3xl">Pembayaran Berhasil</h3>
               <p className="text-slate-600 text-sm md:text-base">Terima kasih atas donasi Anda. Semoga menjadi berkah dan bermanfaat.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              <div className="bg-white p-5 rounded-2xl border-2 border-green-200 shadow-md">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 font-semibold">Jumlah Transaksi</p>
                 <p className="font-bold text-slate-800 text-lg">{createdCheckout.total_item} Item</p>
               </div>
-              <div className="bg-white p-5 rounded-2xl border-2 border-green-200 shadow-md">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 font-semibold">Total Donasi</p>
                 <p className="font-bold text-green-700 text-lg">{formatCurrency(createdCheckout.total_donasi)}</p>
               </div>
-              <div className="bg-white p-5 rounded-2xl border-2 border-green-200 shadow-md">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <p className="text-slate-500 text-xs uppercase tracking-widest mb-2 font-semibold">Status Pembayaran</p>
                 <p className="font-bold text-blue-600 text-lg">{createdCheckout.status || "Pending Verifikasi"}</p>
               </div>
@@ -1967,13 +2402,13 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
             </div>
 
             {isQrisMethod && (
-              <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-2xl p-6 mb-8">
+              <div className="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-6">
                 <div className="flex items-start gap-3">
-                  <svg className="w-6 h-6 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="mt-0.5 h-6 w-6 flex-shrink-0 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div>
-                    <p className="font-semibold text-purple-900 mb-2">Informasi Pembayaran QRIS</p>
+                    <p className="mb-2 font-semibold text-blue-900">Informasi Pembayaran QRIS</p>
                     <ul className="text-sm text-slate-700 space-y-1">
                       <li className="flex items-center gap-2">
                         <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
@@ -1999,7 +2434,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
               </div>
             )}
 
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-5 mb-8">
+            <div className="mb-8 rounded-2xl border border-blue-100 bg-blue-50 p-5">
               <div className="flex items-start gap-3">
                 <svg className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -2017,7 +2452,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                   resetForm();
                   setCreatedCheckout(null);
                 }}
-                className="flex-1 px-6 py-4 rounded-xl bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.01] disabled:transform-none disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-900 px-6 py-4 font-bold text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
@@ -2026,7 +2461,7 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
               </button>
               <button
                 onClick={() => window.history.back()}
-                className="flex-1 px-6 py-4 rounded-xl bg-white border-2 border-slate-300 hover:border-slate-400 text-slate-800 font-bold shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-4 font-bold text-slate-800 transition-colors hover:bg-slate-50"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19H5a2 2 0 01-2-2V7a2 2 0 012-2h4m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2m-4 0h4" />
@@ -2037,19 +2472,25 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
           </div>
         )}
 
-        {/* QR Code Modal - Muncul setelah klik Proses Donasi dengan metode QRIS */}
-        {showQrModal && selectedQrCode && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        {showQrModal && (selectedQrCode || pendingQrisCheckout?.paymentType === 'bank') && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl">
               {/* Header */}
-              <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white p-6 md:p-8 flex items-center justify-between">
+              <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-slate-900 p-6 text-white md:p-8">
                 <div className="flex-1">
-                  <h2 className="text-2xl md:text-3xl font-bold mb-2">Scan QR Code QRIS</h2>
-                  <p className="text-purple-100 text-sm">Silakan scan untuk menyelesaikan pembayaran Anda</p>
+                  <h2 className="text-2xl md:text-3xl font-bold mb-2">
+                    {pendingQrisCheckout?.paymentType === 'bank' ? 'Instruksi Transfer Bank' : 'Scan QR Code QRIS'}
+                  </h2>
+                  <p className="text-sm text-slate-300">
+                    {pendingQrisCheckout?.paymentType === 'bank'
+                      ? 'Gunakan nomor rekening berikut untuk menyelesaikan pembayaran Anda'
+                      : 'Silakan scan untuk menyelesaikan pembayaran Anda'}
+                  </p>
                 </div>
                 <button
                   onClick={closeQrModalWithConfirm}
-                  className="flex-shrink-0 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all duration-200"
+                  disabled={loadingDelete || loadingTransaksi || isGeneratingQr}
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors hover:bg-white/20"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -2065,73 +2506,143 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                     <div>
                       <h3 className="font-bold text-slate-800 text-lg mb-3">Instruksi Pembayaran:</h3>
                       <ol className="space-y-3">
-                        <li className="flex gap-3">
-                          <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">1</div>
+                        {pendingQrisCheckout?.paymentType === 'bank' ? (
+                          <>
+                            <li className="flex gap-3">
+                              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-900 text-sm font-bold text-white">1</div>
+                              <div>
+                                <p className="font-medium text-slate-800">Buka aplikasi mobile banking atau internet banking</p>
+                                <p className="text-sm text-slate-600">Pastikan saldo dan rekening pengirim Anda siap digunakan.</p>
+                              </div>
+                            </li>
+                            <li className="flex gap-3">
+                              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-900 text-sm font-bold text-white">2</div>
+                              <div>
+                                <p className="font-medium text-slate-800">Transfer sesuai total pembayaran</p>
+                                <p className="text-sm text-slate-600">Gunakan nominal yang sama dengan total donasi agar verifikasi lebih mudah.</p>
+                              </div>
+                            </li>
+                            <li className="flex gap-3">
+                              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-900 text-sm font-bold text-white">3</div>
+                              <div>
+                                <p className="font-medium text-slate-800">Simpan bukti transfer</p>
+                                <p className="text-sm text-slate-600">Bukti transfer akan diupload di langkah berikutnya.</p>
+                              </div>
+                            </li>
+                          </>
+                        ) : (
+                          <>
+                            <li className="flex gap-3">
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-900 text-sm font-bold text-white">1</div>
                           <div>
                             <p className="font-medium text-slate-800">Buka aplikasi e-wallet atau mobile banking</p>
                             <p className="text-sm text-slate-600">Gunakan aplikasi favorit Anda (GCash, GoPay, OVO, DANA, dll)</p>
                           </div>
                         </li>
                         <li className="flex gap-3">
-                          <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">2</div>
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-900 text-sm font-bold text-white">2</div>
                           <div>
                             <p className="font-medium text-slate-800">Pilih menu Scan QR atau Pembayaran</p>
                             <p className="text-sm text-slate-600">Cari fitur untuk memindai kode QR</p>
                           </div>
                         </li>
                         <li className="flex gap-3">
-                          <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">3</div>
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-900 text-sm font-bold text-white">3</div>
                           <div>
                             <p className="font-medium text-slate-800">Arahkan ke QR code di samping</p>
                             <p className="text-sm text-slate-600">Pastikan QR code terlihat dengan jelas di layar</p>
                           </div>
                         </li>
                         <li className="flex gap-3">
-                          <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">4</div>
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-900 text-sm font-bold text-white">4</div>
                           <div>
                             <p className="font-medium text-slate-800">Konfirmasi pembayaran</p>
                             <p className="text-sm text-slate-600">Masukkan PIN atau otentikasi untuk menyelesaikan transaksi</p>
                           </div>
                         </li>
+                          </>
+                        )}
                       </ol>
                     </div>
 
-                    {/* Supported Apps */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
-                      <p className="text-sm font-semibold text-blue-900 mb-3">Aplikasi yang didukung:</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="flex items-center gap-2 text-sm text-slate-700">
-                          <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          GCash
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-700">
-                          <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          GoPay
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-700">
-                          <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          OVO
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-700">
-                          <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          DANA
-                        </div>
-                      </div>
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                      {pendingQrisCheckout?.paymentType === 'bank' ? (
+                        <>
+                          <p className="mb-3 text-sm font-semibold text-slate-900">Rekening Tujuan</p>
+                          <div className="space-y-3">
+                            <div className="rounded-2xl bg-white px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Bank</p>
+                              <p className="mt-1 text-sm font-bold text-slate-900">
+                                {pendingQrisCheckout?.bankAccountLabel || createdCheckout?.metode_pembayaran || '-'}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-white px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Nomor Rekening</p>
+                              <p className="mt-1 break-all text-lg font-bold tracking-[0.08em] text-slate-900">
+                                {pendingQrisCheckout?.bankAccountNumber || createdCheckout?.no_rek || '-'}
+                              </p>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mb-3 text-sm font-semibold text-slate-900">Aplikasi yang didukung:</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex items-center gap-2 text-sm text-slate-700">
+                              <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              GCash
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-slate-700">
+                              <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              GoPay
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-slate-700">
+                              <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              OVO
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-slate-700">
+                              <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              DANA
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  {/* QR Code */}
+                  {/* Payment Visual */}
                   <div className="flex flex-col items-center justify-center space-y-4">
-                    <div className="bg-purple-50 p-6 rounded-2xl border-2 border-purple-200 shadow-lg">
-                      {qrImageError ? (
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-6">
+                      {pendingQrisCheckout?.paymentType === 'bank' ? (
+                        <div className="w-56 min-h-[224px] flex flex-col items-center justify-center rounded-lg bg-white px-5 py-8 text-center">
+                          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+                            <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10l9-7 9 7M4 10h16v10a1 1 0 01-1 1H5a1 1 0 01-1-1V10zm5 11V12h6v9" />
+                            </svg>
+                          </div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Transfer Ke Rekening</p>
+                          <p className="mt-3 text-lg font-bold text-slate-900">
+                            {pendingQrisCheckout?.bankAccountLabel || createdCheckout?.metode_pembayaran || '-'}
+                          </p>
+                          <p className="mt-2 break-all text-xl font-black tracking-[0.08em] text-blue-900">
+                            {pendingQrisCheckout?.bankAccountNumber || createdCheckout?.no_rek || '-'}
+                          </p>
+                        </div>
+                      ) : isGeneratingQr ? (
+                        <div className="w-56 h-56 flex flex-col items-center justify-center bg-slate-100 rounded-lg">
+                          <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mb-3"></div>
+                          <p className="text-slate-700 text-sm text-center font-medium">Membuat QRIS dinamis...</p>
+                          <p className="text-xs text-slate-500 mt-1 text-center">Nominal akan mengikuti donasi Anda</p>
+                        </div>
+                      ) : qrImageError ? (
                         <div className="w-56 h-56 flex flex-col items-center justify-center bg-slate-100 rounded-lg">
                           <svg className="w-16 h-16 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
@@ -2153,7 +2664,9 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                       )}
                     </div>
                     <p className="text-sm text-slate-600 text-center font-medium">
-                      QR Code QRIS Anda
+                      {pendingQrisCheckout?.paymentType === 'bank'
+                        ? 'Gunakan rekening ini untuk menyelesaikan transfer'
+                        : 'QR Code QRIS dinamis Anda'}
                     </p>
                     {createdCheckout && (
                       <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center">
@@ -2166,16 +2679,19 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                         </p>
                       </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={downloadQrCode}
-                      className="w-full px-4 py-3 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      Download QR Code
-                    </button>
+                    {pendingQrisCheckout?.paymentType !== 'bank' && (
+                      <button
+                        type="button"
+                        onClick={downloadQrCode}
+                        disabled={isGeneratingQr || (!qrImageBase64 && !qrImageUrl)}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-slate-800"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download QR Code
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2183,22 +2699,24 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
                 <div className="mt-8 pt-6 border-t border-slate-200 space-y-3">
                   <button
                     onClick={closeQrModal}
-                    disabled={loadingUpdateTransaksi}
-                    className="w-full px-6 py-4 rounded-xl bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.01] flex items-center justify-center gap-2"
+                    disabled={loadingTransaksi || isGeneratingQr}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-900 px-6 py-4 font-bold text-white transition-colors hover:bg-blue-800"
                   >
-                    {loadingUpdateTransaksi ? (
-                      'Memproses konfirmasi pembayaran...'
+                    {loadingTransaksi ? (
+                      'Memproses...'
+                    ) : isGeneratingQr ? (
+                      'Menyiapkan QRIS dinamis...'
                     ) : (
                       <>
                         <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
-                        Saya Sudah Melakukan Pembayaran
+                        Lanjut Upload Bukti Pembayaran
                       </>
                     )}
                   </button>
                   <p className="text-xs text-center text-slate-500">
-                    Pembayaran Anda akan diverifikasi dalam waktu 5-10 menit. Anda bisa menutup modal ini dan melihat status transaksi di riwayat.
+                    Setelah tombol ini ditekan, Anda akan diarahkan ke halaman upload bukti pembayaran. Data transaksi baru disimpan saat bukti pembayaran dikonfirmasi di halaman berikutnya.
                   </p>
                 </div>
               </div>
@@ -2206,55 +2724,42 @@ function Transaksi({ user: userProp = null, forcedJenisKey = null }) {
           </div>
         )}
 
-        {/* Cancel Confirmation Modal */}
         {showCancelConfirm && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 animate-in fade-in zoom-in-95 duration-300">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 bg-red-100 rounded-full">
                   <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-bold text-slate-900">Batalkan Donasi?</h3>
+                <h3 className="text-xl font-bold text-slate-900">Batalkan Pembayaran?</h3>
               </div>
-              
+
               <p className="text-slate-600 mb-8 leading-relaxed">
-                Apakah Anda yakin ingin membatalkan donasi ini? Data transaksi Anda akan dihapus dari sistem.
+                Jika Anda memilih <span className="font-semibold">Ya, batalkan</span>, modal pembayaran akan ditutup dan transaksi yang belum dikonfirmasi tidak akan disimpan.
               </p>
 
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowCancelConfirm(false)}
-                  className="flex-1 px-4 py-3 rounded-lg border-2 border-slate-300 hover:border-slate-400 text-slate-800 font-bold shadow-sm hover:shadow-md transition-all duration-300 hover:bg-slate-50"
+                  onClick={handleCancelDonation}
+                  disabled={loadingDelete}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 font-bold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Tidak, Lanjutkan
+                  {loadingDelete ? 'Membatalkan...' : 'Ya, batalkan'}
                 </button>
                 <button
                   type="button"
-                  onClick={handleCancelDonation}
-                  disabled={loadingDelete}
-                  className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="flex-1 rounded-lg border border-slate-300 px-4 py-3 font-bold text-slate-800 transition-colors hover:bg-slate-50"
                 >
-                  {loadingDelete ? (
-                    <>
-                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                      Membatalkan...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                      Ya, Batalkan
-                    </>
-                  )}
+                  Kembali
                 </button>
               </div>
 
               {errorDelete && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
                   <p className="text-sm text-red-700">{errorDelete}</p>
                 </div>
               )}

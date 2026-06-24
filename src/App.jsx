@@ -3,7 +3,6 @@ import { BrowserRouter as Router, useLocation, useNavigate } from 'react-router-
 import LoginPage from './Pages/Loginpages';
 import RegisterPage from './Pages/RegisterPages';
 import UserRoutes from './Component/layout/User/routesUser';
-import AdminRoutes from './Component/layout/Admin/routesAdmin';
 
 const createGuestUser = () => ({
   isGuest: true,
@@ -23,7 +22,6 @@ function AppContent() {
         : 'home';
 
   const [user, setUser] = useState(null);
-  const [admin, setAdmin] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [redirectToDashboard, setRedirectToDashboard] = useState(true);
   const isGuestUser = Boolean(user?.isGuest);
@@ -31,28 +29,16 @@ function AppContent() {
   const ensureGuestSession = () => {
     const guestUser = createGuestUser();
     setUser(guestUser);
-    setAdmin(null);
     localStorage.setItem('guest_user', JSON.stringify(guestUser));
     return guestUser;
   };
 
   useEffect(() => {
-    let parsedAdmin = null;
     let parsedUser = null;
     let parsedGuest = null;
 
-    const savedAdmin = localStorage.getItem('admin_user');
-    if (savedAdmin) {
-      try {
-        parsedAdmin = JSON.parse(savedAdmin);
-        setAdmin(parsedAdmin);
-      } catch (e) {
-        localStorage.removeItem('admin_user');
-      }
-    }
-
     const savedUser = localStorage.getItem('donatur_user');
-    if (savedUser && !parsedAdmin) {
+    if (savedUser) {
       try {
         parsedUser = JSON.parse(savedUser);
         setUser(parsedUser);
@@ -63,7 +49,7 @@ function AppContent() {
     }
 
     const savedGuest = localStorage.getItem('guest_user');
-    if (savedGuest && !parsedAdmin && !parsedUser) {
+    if (savedGuest && !parsedUser) {
       try {
         parsedGuest = JSON.parse(savedGuest);
         setUser(parsedGuest);
@@ -72,7 +58,7 @@ function AppContent() {
       }
     }
 
-    if (!parsedAdmin && !parsedUser && !parsedGuest) {
+    if (!parsedUser && !parsedGuest) {
       ensureGuestSession();
     }
 
@@ -81,19 +67,18 @@ function AppContent() {
 
   useEffect(() => {
     if (isLoading || !redirectToDashboard) return;
-    if (!(user || admin)) return;
+    if (!user) return;
 
     const targetPath = '/';
     if (location.pathname !== targetPath) {
       navigate(targetPath, { replace: true });
     }
     setRedirectToDashboard(false);
-  }, [admin, isLoading, location.pathname, navigate, redirectToDashboard, user]);
+  }, [isLoading, location.pathname, navigate, redirectToDashboard, user]);
 
   const handleLogin = (userData) => {
     setRedirectToDashboard(true);
     setUser(userData);
-    setAdmin(null);
     localStorage.removeItem('guest_user');
   };
 
@@ -107,24 +92,9 @@ function AppContent() {
     navigate('/login');
   };
 
-  const handleAdminLogin = (adminData) => {
-    setRedirectToDashboard(true);
-    setAdmin(adminData);
-    setUser(null);
-    localStorage.removeItem('guest_user');
-  };
-
   const handleUserLogout = () => {
     localStorage.removeItem('donatur_user');
     localStorage.removeItem('donatur_credential');
-    localStorage.removeItem('guest_user');
-    ensureGuestSession();
-    setRedirectToDashboard(true);
-    navigate('/', { replace: true });
-  };
-
-  const handleAdminLogout = () => {
-    localStorage.removeItem('admin_user');
     localStorage.removeItem('guest_user');
     ensureGuestSession();
     setRedirectToDashboard(true);
@@ -141,12 +111,9 @@ function AppContent() {
 
   return (
     <div className="App">
-      {admin ? (
-        <AdminRoutes admin={admin} onLogout={handleAdminLogout} />
-      ) : publicView === 'login' && (!user || isGuestUser) ? (
+      {publicView === 'login' && (!user || isGuestUser) ? (
         <LoginPage
           onLogin={handleLogin}
-          onAdminLogin={handleAdminLogin}
           onGoToRegister={() => navigate('/register')}
           onGoToHome={() => navigate('/')}
           onGuestAccess={handleGuestAccess}

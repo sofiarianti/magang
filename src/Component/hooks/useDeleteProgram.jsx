@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import api from '../Services/api';
-import endpoints from '../Services/endpointAdmin';
+import endpoints from '../Services/endpointUser';
 
 /**
  * @returns { Object } - Mengembalikan fungsi deleteProgram, serta status loading dan error.

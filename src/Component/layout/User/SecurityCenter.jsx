@@ -11,57 +11,45 @@ function SecurityCenter() {
   const sections = [
     {
       id: 'lembaga',
-      title: '🏢 Informasi Lembaga Resmi',
+      title: ' Profil Lembaga',
       content: (
         <div className="space-y-4">
           <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-5">
-            <h4 className="font-bold text-blue-900 mb-3">Data Lembaga</h4>
+            <h4 className="font-bold text-blue-900 mb-3">Yayasan Resmi</h4>
             <div className="space-y-2 text-sm text-blue-800">
               <div>
                 <strong className="text-blue-900">Nama Lembaga:</strong>
-                <p>Masjid Pusat Zakat Donatur (MPZDT)</p>
-              </div>
-              <div>
-                <strong className="text-blue-900">Nomor Izin Operasional:</strong>
-                <p>SK. Kemenag No. 123/2020</p>
-              </div>
-              <div>
-                <strong className="text-blue-900">NPWP:</strong>
-                <p>12.345.678.9-123.000</p>
-              </div>
-              <div>
-                <strong className="text-blue-900">Nomor Rekening Resmi:</strong>
-                <p>1234567890 (BNI Syariah)</p>
+                <p>Yayasan Kunci Kemurnian Sejahtera (DT Peduli)</p>
               </div>
               <div>
                 <strong className="text-blue-900">Alamat Kantor:</strong>
-                <p>Jl. Dakwah No. 123, Jakarta 12345, Indonesia</p>
+                <p>Jl. Dakwah No. 123, Bogor, Jawa Barat</p>
               </div>
               <div>
-                <strong className="text-blue-900">Telepon:</strong>
-                <p>(021) 1234-5678</p>
+                <strong className="text-blue-900">Kontak Resmi:</strong>
+                <p>WhatsApp 0823 1900 0200 / support@dtpeduli.org</p>
+              </div>
+              <div>
+                <strong className="text-blue-900">Program Utama:</strong>
+                <p>Zakat, infak, sedekah, donasi kemanusiaan, dan pemberdayaan ekonomi.</p>
               </div>
             </div>
           </div>
 
           <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-5">
-            <h4 className="font-bold text-blue-900 mb-3">Kredibilitas & Sertifikasi</h4>
+            <h4 className="font-bold text-blue-900 mb-3">Komitmen Transparansi</h4>
             <ul className="space-y-2 text-sm text-blue-800">
               <li className="flex gap-2">
                 <FiCheck className="text-green-600 flex-shrink-0 mt-0.5" />
-                <span><strong>Terakreditasi A</strong> - Kementerian Agama Republik Indonesia</span>
+                <span>Pengelolaan dana sesuai prinsip syariah dan transparan.</span>
               </li>
               <li className="flex gap-2">
                 <FiCheck className="text-green-600 flex-shrink-0 mt-0.5" />
-                <span><strong>Tersertifikasi ISO 9001:2015</strong> - Standar Manajemen Kualitas</span>
+                <span>Laporan penyaluran donasi yang dapat dipertanggungjawabkan.</span>
               </li>
               <li className="flex gap-2">
                 <FiCheck className="text-green-600 flex-shrink-0 mt-0.5" />
-                <span><strong>Anggota BAZNAS</strong> - Badan Amil Zakat Nasional</span>
-              </li>
-              <li className="flex gap-2">
-                <FiCheck className="text-green-600 flex-shrink-0 mt-0.5" />
-                <span><strong>Laporan Keuangan Transparan</strong> - Audit eksternal setiap tahun</span>
+                <span>Fokus pada mustahik, pendidikan, dan bantuan darurat.</span>
               </li>
             </ul>
           </div>
@@ -71,15 +59,15 @@ function SecurityCenter() {
             <div className="space-y-3 text-sm text-amber-800">
               <div>
                 <strong className="text-amber-900">Visi:</strong>
-                <p className="mt-1">Menjadi lembaga zakat terpercaya yang memberdayakan umat dan memberantas kemiskinan dengan mengedepankan transparansi dan profesionalisme.</p>
+                <p className="mt-1">Menjadi lembaga filantropi terpercaya yang memberdayakan masyarakat melalui zakat dan program sosial.</p>
               </div>
               <div>
                 <strong className="text-amber-900">Misi:</strong>
                 <ul className="mt-1 space-y-1 ml-4">
-                  <li>1. Mengumpulkan zakat dengan integritas tinggi dari masyarakat Muslim</li>
-                  <li>2. Mendistribusikan zakat kepada asnaf yang berhak bersdasarkan syariat Islam</li>
-                  <li>3. Mendampingi mustahik menuju kemandirian ekonomi</li>
-                  <li>4. Mengelola zakat dengan transparan dan profesional</li>
+                  <li>1. Menyalurkan bantuan tepat sasaran kepada yang membutuhkan.</li>
+                  <li>2. Memberdayakan keluarga kurang mampu secara berkelanjutan.</li>
+                  <li>3. Mendukung program pendidikan dan penanggulangan bencana.</li>
+                  <li>4. Menjaga akuntabilitas dan transparansi terhadap donatur.</li>
                 </ul>
               </div>
             </div>
@@ -89,7 +77,7 @@ function SecurityCenter() {
     },
     {
       id: 'privasi',
-      title: '🔐 Kebijakan Privasi',
+      title: ' Kebijakan Privasi',
       content: (
         <div className="space-y-4">
           <p className="text-slate-700 leading-relaxed">
@@ -164,11 +152,11 @@ function SecurityCenter() {
     },
     {
       id: 'syarat',
-      title: '📋 Syarat & Ketentuan',
+      title: ' Syarat & Ketentuan',
       content: (
         <div className="space-y-4">
           <p className="text-slate-700 leading-relaxed">
-            Dengan menggunakan aplikasi MPZDT, Anda setuju untuk mematuhi syarat dan ketentuan berikut:
+            Dengan menggunakan aplikasi DT Peduli, Anda setuju untuk mematuhi syarat dan ketentuan berikut:
           </p>
 
           <div className="space-y-3">
@@ -244,7 +232,7 @@ function SecurityCenter() {
     },
     {
       id: 'password',
-      title: '🔒 Keamanan Password & Akun',
+      title: 'Keamanan Password & Akun',
       content: (
         <div className="space-y-4">
           <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-5">
@@ -295,7 +283,7 @@ function SecurityCenter() {
             <h4 className="font-bold text-blue-900 mb-3">Apa yang Harus Dilakukan Jika Akun Diretas?</h4>
             <ol className="space-y-2 text-sm text-blue-800">
               <li>1. <strong>Segera reset password</strong> melalui halaman "Lupa Password"</li>
-              <li>2. <strong>Hubungi tim support kami</strong> di support@mpzdt.org dengan bukti identitas</li>
+              <li>2. <strong>Hubungi tim support kami</strong> di support@dtpeduli.org dengan bukti identitas</li>
               <li>3. <strong>Periksa riwayat transaksi</strong> untuk aktivitas mencurigakan</li>
               <li>4. <strong>Aktifkan autentikasi dua faktor</strong> (jika tersedia) untuk perlindungan ekstra</li>
               <li>5. <strong>Monitor akun Anda</strong> untuk beberapa waktu ke depan</li>
@@ -338,7 +326,7 @@ function SecurityCenter() {
           <div className="bg-gradient-to-r from-blue-900 to-blue-800 rounded-2xl p-5 text-white shadow-md">
             <p className="text-sm font-medium">
               <strong>Butuh Bantuan dengan Keamanan Akun?</strong><br />
-              Hubungi tim support kami di support@mpzdt.org atau telepon (021) 1234-5678
+              Hubungi tim support kami di support@dtpeduli.org atau WhatsApp 0823 1900 0200
             </p>
           </div>
         </div>
@@ -436,7 +424,7 @@ function SecurityCenter() {
               Data Anda dilindungi dengan enkripsi tingkat enterprise dan audit keamanan berkala oleh pihak ketiga independen.
             </p>
             <p className="text-xs text-slate-500 border-t border-slate-700 pt-4">
-              Dokumen ini terakhir diperbarui pada Maret 2026. MPZDT berhak mengubah kebijakan ini, namun perubahan material 
+              Dokumen ini terakhir diperbarui pada Maret 2026. DT Peduli berhak mengubah kebijakan ini, namun perubahan material 
               akan diberitahukan kepada pengguna melalui email atau notifikasi di aplikasi.
             </p>
           </div>

@@ -7,6 +7,7 @@ const endpointsUser = {
     login: '/api/donatur/login',
     update: (id) => `/api/donatur/update/${id}`,
     delete: (id) => `/api/donatur/delete/${id}`,
+    getByLembaga: (id_lembaga) => `/api/donatur/by-lembaga/${id_lembaga}`,
     sendOtp: '/api/donatur/password/otp-request',
     resetPassword: '/api/donatur/password/otp-verify',
   },
@@ -20,15 +21,6 @@ const endpointsUser = {
       delete: (id) => `/api/detail-donasi/delete/${id}`,
     },
 
-    detail_transaksi: {
-      getAll: '/api/detail-transaksi',
-      getById: (id) => `/api/detail-transaksi/get/${id}`,
-      create: '/api/detail-transaksi/insert',
-      login: '/api/detail-transaksi/login',
-      update: (id) => `/api/detail-transaksi/update/${id}`,
-      delete: (id) => `/api/detail-transaksi/delete/${id}`,
-    },
-  
     himpun: {
       getAll: '/api/himpun',
       getById: (id) => `/api/himpun/get/${id}`,
@@ -46,24 +38,6 @@ const endpointsUser = {
       login: '/api/detail-himpun/login',
       update: (id) => `/api/detail-himpun/update/${id}`,
       delete: (id) => `/api/detail-himpun/delete/${id}`,
-    },
-
-    infak_terikat: {
-      getAll: '/api/infak-terikat',
-      getById: (id) => `/api/infak-terikat/get/${id}`,
-      create: '/api/infak-terikat/insert',
-      login: '/api/infak-terikat/login',
-      update: (id) => `/api/infak-terikat/update/${id}`,
-      delete: (id) => `/api/infak-terikat/delete/${id}`,
-    },
-
-    infak_umum: {
-      getAll: '/api/infak-umum',
-      getById: (id) => `/api/infak-umum/get/${id}`,
-      create: '/api/infak-umum/insert',
-      login: '/api/infak-umum/login',
-      update: (id) => `/api/infak-umum/update/${id}`,
-      delete: (id) => `/api/infak-umum/delete/${id}`,
     },
 
     jenis_donasi: {
@@ -88,13 +62,24 @@ const endpointsUser = {
       delete: (id) => `/api/transaksi/delete/${id}`,
     },
 
-    zakat: {
-      getAll: '/api/zakat',
-      getById: (id) => `/api/zakat/get/${id}`,
-      create: '/api/zakat/insert',
-      login: '/api/zakat/login',
-      update: (id) => `/api/zakat/update/${id}`,
-      delete: (id) => `/api/zakat/delete/${id}`,
+    konfirmasi_transaksi: {
+      getAll: '/api/konfirmasi-transaksi',
+      getById: (id) => `/api/konfirmasi-transaksi/get/${id}`,
+      getByTransaksi: (id_transaksi) =>
+        `/api/konfirmasi-transaksi/by-transaksi/${id_transaksi}`,
+      getByTransaksiKurban: (id_transaksi_kurban) =>
+        `/api/konfirmasi-transaksi/by-transaksi-kurban/${id_transaksi_kurban}`,
+      create: '/api/konfirmasi-transaksi/insert',
+      update: (id) => `/api/konfirmasi-transaksi/update/${id}`,
+      delete: (id) => `/api/konfirmasi-transaksi/delete/${id}`,
+    },
+
+    lembaga: {
+      getAll: '/api/lembaga',
+      getById: (id) => `/api/lembaga/get/${id}`,
+      create: '/api/lembaga/insert',
+      update: (id) => `/api/lembaga/update/${id}`,
+      delete: (id) => `/api/lembaga/delete/${id}`,
     },
 
     informasi: {
@@ -105,15 +90,36 @@ const endpointsUser = {
       delete: (id) => `/api/informasi-mahasiswa/delete/${id}`,
     },
 
+    program: {
+      getAll: '/api/program',
+      getById: (id) => `/api/program/get/${id}`,
+      create: '/api/program/insert',
+      update: (id) => `/api/program/update/${id}`,
+      delete: (id) => `/api/program/delete/${id}`,
+    },
+
+    penyaluran_program: {
+      getAll: '/api/penyaluran-program',
+      getById: (id) => `/api/penyaluran-program/get/${id}`,
+      create: '/api/penyaluran-program/insert',
+      update: (id) => `/api/penyaluran-program/update/${id}`,
+      delete: (id) => `/api/penyaluran-program/delete/${id}`,
+    },
+
     qrcode: {
        getAll: '/api/qrcode',
        getActive: '/api/qrcode/active',
+      generate: '/api/qrcode/generate',
       getById: (id) => `/api/qrcode/get/${id}`,
       create: '/api/qrcode/insert',
       update: (id) => `/api/qrcode/update/${id}`,
       delete: (id) => `/api/qrcode/delete/${id}`,
      
 
+    },
+
+    laporan_bsz: {
+      generate: '/api/laporan-bsz/generate',
     },
 };
 

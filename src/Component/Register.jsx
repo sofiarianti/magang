@@ -1,10 +1,23 @@
 import React, { useState } from 'react';
+import useAPI from './hooks/useAPI';
 import usePostDonatur from './hooks/usePostDonatur';
+import endpoints from './Services/endpointUser';
 import { addNotification } from './Services/notifikasi';
 
 function Register({ onGoToLogin, onRegisterLogin }) {
   const { postDonatur, loading, error } = usePostDonatur();
+  const { data: lembagaList, loading: lembagaLoading, error: lembagaError } = useAPI(endpoints.lembaga.getAll);
+  const normalizedLembagaList = Array.isArray(lembagaList)
+    ? lembagaList
+    : Array.isArray(lembagaList?.data)
+    ? lembagaList.data
+    : Array.isArray(lembagaList?.lembaga)
+    ? lembagaList.lembaga
+    : [];
   const [formData, setFormData] = useState({
+    id_lembaga: '',
+    nama: '',
+    jenis_kelamin: '',
     email: '',
     no_hp: '',
     password: '',
@@ -15,11 +28,11 @@ function Register({ onGoToLogin, onRegisterLogin }) {
   const [passwordStrength, setPasswordStrength] = useState(0);
 
   const inputClassName =
-    'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100';
+    'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition-all duration-200 placeholder:text-slate-400 hover:border-slate-300 focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100';
   const primaryButtonClassName =
-    'flex-1 rounded-2xl bg-[linear-gradient(135deg,_#0f172a_0%,_#1e3a8a_72%,_#f59e0b_140%)] px-6 py-3.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:translate-y-[-1px] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 disabled:transform-none';
+    'flex-1 rounded-xl bg-[#1A3A6F] px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/15 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 disabled:transform-none';
   const secondaryButtonClassName =
-    'flex-1 rounded-2xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 transition-colors duration-200 hover:border-blue-200 hover:bg-slate-50';
+    'flex-1 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 transition-colors duration-200 hover:border-blue-200 hover:bg-slate-50';
 
   const calculatePasswordStrength = (password) => {
     let strength = 0;
@@ -62,8 +75,8 @@ function Register({ onGoToLogin, onRegisterLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.email || !formData.no_hp || !formData.password) {
-      setStepError('Email, nomor HP, dan password harus diisi.');
+    if (!formData.id_lembaga || !formData.nama || !formData.jenis_kelamin || !formData.email || !formData.no_hp || !formData.password) {
+      setStepError('Lembaga, nama, jenis kelamin, email, nomor HP, dan password harus diisi.');
       return;
     }
 
@@ -92,11 +105,11 @@ function Register({ onGoToLogin, onRegisterLogin }) {
 
     const result = await postDonatur(
       '',
+      formData.nama,
       '',
       '',
       '',
-      '',
-      '',
+      formData.jenis_kelamin,
       '',
       '',
       '',
@@ -104,7 +117,8 @@ function Register({ onGoToLogin, onRegisterLogin }) {
       formData.no_hp,
       formData.email,
       formData.password,
-      1
+      1,
+      formData.id_lembaga
     );
 
     if (result) {
@@ -133,29 +147,29 @@ function Register({ onGoToLogin, onRegisterLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(135deg,_#eff6ff_0%,_#ffffff_42%,_#fff7ed_100%)] px-4 py-8">
-      <div className="mx-auto max-w-3xl">
-        <div className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.12)]">
-          <div className="relative overflow-hidden border-b border-blue-900/10 bg-[linear-gradient(145deg,_#0f172a_0%,_#1e3a8a_58%,_#1d4ed8_100%)] px-8 py-8 text-white lg:px-10">
-            <div className="absolute -left-12 top-10 h-36 w-36 rounded-full bg-white/10 blur-3xl" />
-            <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-amber-300/20 blur-3xl" />
-            <div className="relative z-10 flex items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/15 bg-white/10 p-3 backdrop-blur-sm">
-                <img src="/logo512.png" alt="Logo MPZ DT" className="h-full w-full object-contain drop-shadow-xl" />
+    <div className="min-h-screen bg-[#f6f8fb] px-4 py-8 text-slate-900">
+      <div className="mx-auto max-w-5xl">
+        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
+          <div className="relative overflow-hidden border-b border-slate-200 bg-[#1A3A6F] px-6 py-7 text-white sm:px-8 lg:px-10">
+            <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-20 items-center justify-center rounded-2xl border border-white/20 bg-white p-3 shadow-sm">
+                  <img src="/bsz-assets/logo_dpudt.png" alt="Logo DT Peduli" className="h-full w-full object-contain" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-100">Buat Akun Baru</p>
+                  <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Daftar Donatur</h1>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200">Buat Akun Baru</p>
-                <h1 className="mt-2 text-3xl font-semibold text-white">Daftar Donatur MPZ DT</h1>
-                <p className="mt-2 text-sm text-blue-100">
-                  Registrasi cukup dengan email, nomor HP, dan password. Data diri bisa dilengkapi nanti di halaman profil.
-                </p>
+              <div className="max-w-md rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm leading-6 text-blue-50 backdrop-blur-sm">
+                Registrasi cukup dengan data utama. Biodata lengkap bisa dilengkapi setelah login.
               </div>
             </div>
           </div>
 
-          <div className="p-8 lg:p-10">
+          <div className="p-6 sm:p-8 lg:p-10">
             {(stepError || error) && (
-              <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+              <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
                 <svg className="mt-0.5 h-6 w-6 flex-shrink-0 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4v2m0 4v2m0-14a9 9 0 110 18 9 9 0 010-18z" />
                 </svg>
@@ -167,14 +181,67 @@ function Register({ onGoToLogin, onRegisterLogin }) {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-8">
-              <div>
-                <h3 className="text-2xl font-semibold text-slate-900">Informasi Akun</h3>
-                <p className="mt-3 text-sm leading-6 text-slate-600">
-                  Setelah akun dibuat, Anda bisa langsung masuk lalu melengkapi biodata donatur di halaman profil.
-                </p>
+              <div className="flex flex-col gap-3 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-950">Informasi Akun</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Isi data berikut untuk membuat akun donatur.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Wajib diisi</span>
               </div>
 
-              <div className="grid grid-cols-1 gap-6">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-semibold text-slate-800">Lembaga *</label>
+                  <select
+                    name="id_lembaga"
+                    onChange={handleChange}
+                    value={formData.id_lembaga}
+                    className={inputClassName}
+                    required
+                  >
+                    <option value="">Pilih lembaga</option>
+                    {lembagaLoading && <option value="">Memuat lembaga...</option>}
+                    {!lembagaLoading && lembagaError && <option value="">Gagal memuat lembaga</option>}
+                    {!lembagaLoading && !lembagaError && normalizedLembagaList.length === 0 && <option value="">Belum ada lembaga tersedia</option>}
+                    {!lembagaLoading && normalizedLembagaList.map((lembaga) => (
+                      <option key={lembaga.id_lembaga || lembaga.id || lembaga._id} value={lembaga.id_lembaga || lembaga.id || lembaga._id}>
+                        {lembaga.nama_lembaga || lembaga.nama || lembaga.name || `Lembaga ${lembaga.id_lembaga || lembaga.id || lembaga._id}`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-slate-500">Pilih lembaga tempat donatur terdaftar.</p>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-800">Nama *</label>
+                  <input
+                    type="text"
+                    name="nama"
+                    placeholder="Masukkan nama Anda"
+                    onChange={handleChange}
+                    value={formData.nama}
+                    className={inputClassName}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-800">Jenis Kelamin *</label>
+                  <select
+                    name="jenis_kelamin"
+                    onChange={handleChange}
+                    value={formData.jenis_kelamin}
+                    className={inputClassName}
+                    required
+                  >
+                    <option value="">Pilih jenis kelamin</option>
+                    <option value="Laki-laki">Laki-laki</option>
+                    <option value="Perempuan">Perempuan</option>
+                  </select>
+                </div>
+
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-800">Email *</label>
                   <input
@@ -186,7 +253,7 @@ function Register({ onGoToLogin, onRegisterLogin }) {
                     className={inputClassName}
                     required
                   />
-                  <p className="mt-2 text-xs text-slate-500">Email akan digunakan sebagai username untuk login. Gunakan format: nama@domain.com</p>
+                  <p className="mt-2 text-xs text-slate-500">Email digunakan sebagai username login.</p>
                 </div>
 
                 <div>
@@ -200,7 +267,7 @@ function Register({ onGoToLogin, onRegisterLogin }) {
                     className={inputClassName}
                     required
                   />
-                  <p className="mt-2 text-xs text-slate-500">Format: +62xxx atau 0xxx dengan 9-12 digit angka.</p>
+                  <p className="mt-2 text-xs text-slate-500">Format: +62xxx atau 0xxx.</p>
                 </div>
 
                 <div>
@@ -218,7 +285,8 @@ function Register({ onGoToLogin, onRegisterLogin }) {
                     <button
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-700"
+                      className="absolute inset-y-0 right-0 px-4 text-slate-500 transition-colors hover:text-slate-700"
+                      aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
                     >
                       {showPassword ? (
                         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -273,7 +341,8 @@ function Register({ onGoToLogin, onRegisterLogin }) {
                       formData.password_confirm && formData.password !== formData.password_confirm
                         ? 'border-red-300 focus:border-red-500 focus:ring-red-100'
                         : ''
-                    }`}                    required
+                    }`}
+                    required
                   />
                   {formData.password_confirm && (
                     <p
@@ -295,7 +364,7 @@ function Register({ onGoToLogin, onRegisterLogin }) {
                 </p>
               </div>
 
-              <div className="flex gap-4 border-t border-slate-200 pt-6">
+              <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-6 sm:flex-row sm:gap-4">
                 <button type="button" onClick={onGoToLogin} className={secondaryButtonClassName}>
                   Kembali ke Login
                 </button>
@@ -303,6 +372,8 @@ function Register({ onGoToLogin, onRegisterLogin }) {
                   type="submit"
                   disabled={
                     loading ||
+                    !formData.nama ||
+                    !formData.jenis_kelamin ||
                     !formData.email ||
                     !formData.no_hp ||
                     !formData.password ||

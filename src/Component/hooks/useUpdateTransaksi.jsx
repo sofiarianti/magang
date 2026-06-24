@@ -42,6 +42,28 @@ const usePutTransaksi = () => {
     setError(null);
 
     try {
+      const normalizedJumlahDonasi =
+        jumlah_donasi === undefined || jumlah_donasi === null
+          ? ''
+          : String(jumlah_donasi).trim();
+      const normalizedStatus =
+        status === undefined || status === null
+          ? undefined
+          : String(status).trim();
+
+      if (
+        normalizedJumlahDonasi &&
+        ['pending', 'diproses', 'processed', 'processing', 'success', 'verified'].includes(
+          normalizedJumlahDonasi.toLowerCase()
+        ) &&
+        normalizedStatus &&
+        !['pending', 'diproses', 'processed', 'processing', 'success', 'verified'].includes(
+          normalizedStatus.toLowerCase()
+        )
+      ) {
+        throw new Error('Parameter putTransaksi tidak sesuai urutan. Periksa argumen kode_detail_transaksi, jumlah_donasi, dan status.');
+      }
+
       // Membuat objek data untuk dikirim (support update status)
       const data = {
         kode_transaksi,
@@ -53,7 +75,7 @@ const usePutTransaksi = () => {
         kode_detail_transaksi,
         jumlah_donasi,
         catatan,
-        ...(status !== undefined ? { status, status_transaksi: status } : {}),
+        ...(normalizedStatus !== undefined ? { status: normalizedStatus, status_transaksi: normalizedStatus } : {}),
       };
     // Defensive check untuk memastikan endpoints.donatur.update terdefinisi
       if (!endpoints.transaksi || typeof endpoints.transaksi.update !== 'function') {

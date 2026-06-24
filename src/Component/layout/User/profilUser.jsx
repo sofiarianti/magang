@@ -3,9 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import useAPI from '../../hooks/useAPI';
 import endpoints from '../../Services/endpointUser';
 import useDeleteDonatur from '../../hooks/useDeleteDonatur';
+import ConfirmDeleteModal from './ConfirmDeleteModal';
+import ChangePasswordModal from './ChangePasswordModal';
 
 function Profil() {
   const [user, setUser] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -63,18 +67,20 @@ function Profil() {
   const handleDelete = async () => {
     if (!donaturId) return;
 
-    const confirmDelete = window.confirm(
-      'Apakah Anda yakin ingin menghapus akun donatur ini? Tindakan ini tidak dapat dibatalkan.'
-    );
-
-    if (!confirmDelete) return;
-
     const success = await deleteDonatur(donaturId);
     if (success) {
       localStorage.removeItem('donatur_user');
       localStorage.removeItem('donatur_credential');
       window.location.reload();
     }
+  };
+
+  const handleDeleteClick = () => {
+    setShowDeleteModal(true);
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
   };
 
   if (!user) {
@@ -117,67 +123,71 @@ function Profil() {
     <div className="min-h-screen bg-slate-50 px-4 py-6 md:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <section className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 bg-slate-900 px-6 py-8 md:px-8">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[24px] border border-white/15 bg-white/10 text-2xl font-bold text-white">
+          <div className="px-6 py-8 md:px-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-5">
+                <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-900 text-3xl font-semibold text-white shadow-sm">
                   {initials}
                 </div>
                 <div className="space-y-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-amber-300">
-                      Profil Donatur
-                    </p>
-                    <h1 className="mt-2 text-2xl font-semibold text-white md:text-3xl">
-                      {donatur?.nama || 'Donatur MPZ DT'}
-                    </h1>
-                  </div>
-                  <p className="max-w-2xl text-sm leading-7 text-slate-300">
-                    Informasi profil ini digunakan untuk mendukung proses donasi, riwayat
-                    transaksi, dan komunikasi resmi dari MPZ Daarut Tauhiid.
+                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-amber-500">Profil Donatur</p>
+                  <h1 className="text-3xl font-semibold text-slate-900">
+                    {donatur?.nama || 'Donatur DT Peduli'}
+                  </h1>
+                  <p className="max-w-2xl text-sm leading-7 text-slate-600">
+                    Profil Anda membantu DT Peduli mengelola donasi, laporan transaksi, dan komunikasi resmi dengan lebih baik.
                   </p>
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 md:min-w-[320px]">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Email</p>
-                  <p className="mt-2 text-sm font-medium text-white">{donatur?.email || '-'}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Email</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{donatur?.email || '-'}</p>
                 </div>
-                <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-amber-200">Telepon</p>
-                  <p className="mt-2 text-sm font-medium text-white">{donatur?.no_hp || '-'}</p>
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Telepon</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{donatur?.no_hp || '-'}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between md:px-8">
-            <div className="flex flex-wrap gap-3">
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-600">
-                Data Donatur Aktif
-              </span>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-amber-700">
-                Tersinkron dengan akun
-              </span>
-            </div>
+          <div className="border-t border-slate-200 bg-slate-50 px-6 py-5 md:px-8">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-3">
+                <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                  Data Donatur Aktif
+                </span>
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
+                  Tersinkron dengan akun
+                </span>
+              </div>
 
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleEditClick}
-                className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-              >
-                Edit Profil
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="rounded-2xl border border-red-200 px-5 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {deleting ? 'Menghapus...' : 'Hapus Akun'}
-              </button>
+              <div className="flex flex-wrap gap-3 justify-start lg:justify-end">
+                <button
+                  type="button"
+                  onClick={handleEditClick}
+                  className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Edit Profil
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowChangePasswordModal(true)}
+                  className="rounded-2xl bg-amber-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700"
+                >
+                  Ubah Kata Sandi
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteClick}
+                  disabled={deleting}
+                  className="rounded-2xl border border-red-200 px-5 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deleting ? 'Menghapus...' : 'Hapus Akun'}
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -209,28 +219,18 @@ function Profil() {
         <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
           <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
             <div className="flex flex-col gap-2 border-b border-slate-200 pb-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">
-                Biodata
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">Biodata</p>
               <h2 className="text-2xl font-semibold text-slate-900">Informasi Pribadi</h2>
               <p className="text-sm leading-7 text-slate-600">
-                Pastikan identitas donatur sudah sesuai agar proses pencatatan transaksi dan
-                komunikasi berjalan dengan baik.
+                Pastikan identitas donatur sudah sesuai agar pencatatan transaksi dan komunikasi dapat berjalan lancar.
               </p>
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               {biodataItems.map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4"
-                >
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    {item.label}
-                  </p>
-                  <p className="mt-3 text-sm font-medium leading-6 text-slate-900">
-                    {item.value || '-'}
-                  </p>
+                <div key={item.label} className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">{item.label}</p>
+                  <p className="mt-3 text-sm font-medium leading-6 text-slate-900">{item.value || '-'}</p>
                 </div>
               ))}
             </div>
@@ -239,9 +239,7 @@ function Profil() {
           <div className="space-y-6">
             <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
               <div className="border-b border-slate-200 pb-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">
-                  Alamat
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">Alamat</p>
                 <h2 className="mt-2 text-xl font-semibold text-slate-900">Domisili Donatur</h2>
               </div>
 
@@ -254,45 +252,48 @@ function Profil() {
 
             <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
               <div className="border-b border-slate-200 pb-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">
-                  Kontak
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-600">Kontak</p>
                 <h2 className="mt-2 text-xl font-semibold text-slate-900">Informasi Akun</h2>
               </div>
 
               <div className="mt-5 space-y-4">
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    Email
-                  </p>
-                  <p className="mt-3 text-sm font-medium text-slate-900">
-                    {donatur?.email || '-'}
-                  </p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Email</p>
+                  <p className="mt-3 text-sm font-medium text-slate-900">{donatur?.email || '-'}</p>
                 </div>
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    Nomor Telepon
-                  </p>
-                  <p className="mt-3 text-sm font-medium text-slate-900">
-                    {donatur?.no_hp || '-'}
-                  </p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Nomor Telepon</p>
+                  <p className="mt-3 text-sm font-medium text-slate-900">{donatur?.no_hp || '-'}</p>
                 </div>
               </div>
             </section>
 
             <section className="rounded-[32px] border border-slate-200 bg-slate-900 p-6 shadow-sm md:p-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">
-                Catatan
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">Catatan</p>
               <h2 className="mt-2 text-xl font-semibold text-white">Jaga data tetap akurat</h2>
               <p className="mt-3 text-sm leading-7 text-slate-300">
-                Bila ada perubahan nomor telepon, alamat, atau identitas pribadi, perbarui profil
-                agar notifikasi transaksi dan proses layanan donasi tetap berjalan dengan baik.
+                Bila ada perubahan nomor telepon, alamat, atau identitas pribadi, perbarui profil agar notifikasi transaksi dan layanan donasi tetap berjalan lancar.
               </p>
             </section>
           </div>
         </div>
       </div>
+
+      <ConfirmDeleteModal
+        isOpen={showDeleteModal}
+        title="Hapus Akun"
+        message="Apakah Anda yakin ingin menghapus akun donatur ini? Semua data akan dihapus dan tindakan ini tidak dapat dibatalkan."
+        confirmText="Hapus"
+        cancelText="Batal"
+        onConfirm={handleDelete}
+        onCancel={handleCancelDelete}
+        isLoading={deleting}
+      />
+
+      <ChangePasswordModal
+        isOpen={showChangePasswordModal}
+        onClose={() => setShowChangePasswordModal(false)}
+      />
     </div>
   );
 }

@@ -92,15 +92,24 @@ function SidebarUser({ isOpen = true, children, user }) {
   ];
 
   const itemClass = (active) =>
-    `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+    `group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200 ${
       active
-        ? 'bg-slate-900 text-white'
+        ? 'bg-blue-900 text-white'
         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
     }`;
 
   const iconClass = (active) =>
-    `flex h-9 w-9 items-center justify-center rounded-lg text-[15px] ${
-      active ? 'bg-white/12 text-white' : 'bg-slate-100 text-slate-500'
+    `flex h-8 w-8 items-center justify-center rounded-lg text-[15px] transition-colors ${
+      active
+        ? 'bg-white/20 text-white'
+        : 'text-slate-500 group-hover:text-slate-700'
+    }`;
+
+  const submenuClass = (active) =>
+    `block rounded-lg px-3 py-2 text-sm transition-colors ${
+      active
+        ? 'bg-slate-100 font-semibold text-slate-900'
+        : 'text-slate-500 hover:text-slate-900'
     }`;
 
   return (
@@ -111,146 +120,111 @@ function SidebarUser({ isOpen = true, children, user }) {
         }`}
       >
         <div className="flex h-full flex-col">
-          <div className="border-b border-slate-200 px-5 py-5">
+          <div className="border-b border-slate-200 px-4 py-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white">
-                <FiUser className="text-base" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-900 text-white">
+                <FiUser className="text-sm" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
                 <p className="truncate text-xs text-slate-500">{displayMeta}</p>
               </div>
             </div>
           </div>
 
-          <nav className="flex-1 overflow-y-auto px-4 py-5">
-            <div className="space-y-6">
-              <section className="space-y-2">
-                <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Menu Utama
-                </p>
-                <div className="space-y-1.5">
-                  {menuItems.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <Link key={item.to} to={item.to} className={itemClass(item.active)}>
-                        <span className={iconClass(item.active)}>
-                          <Icon />
-                        </span>
-                        <span>{item.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <section className="space-y-2">
-                <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Donasi
-                </p>
-                <div className="space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleDropdown('donasi')}
-                    className={`${itemClass(isActivePath(['/donasi/zakat', '/donasi/infaq-sedekah', '/donasi/wakaf']))} w-full justify-between`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={iconClass(isActivePath(['/donasi/zakat', '/donasi/infaq-sedekah', '/donasi/wakaf']))}>
-                        <FiCreditCard />
+          <nav className="flex-1 overflow-y-auto px-4 py-3">
+            <div className="space-y-3">
+              <div className="space-y-2">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link key={item.to} to={item.to} className={itemClass(item.active)}>
+                      <span className={iconClass(item.active)}>
+                        <Icon />
                       </span>
-                      <span>Program Donasi</span>
-                    </div>
-                    <FiChevronDown
-                      className={`text-sm transition-transform ${
-                        openDropdown === 'donasi' ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-
-                  {openDropdown === 'donasi' && (
-                    <div className="ml-4 border-l border-slate-200 pl-4">
-                      <div className="space-y-1">
-                        {donasiItems.map((item) => {
-                          const active = location.pathname.startsWith(item.to);
-                          return (
-                            <Link
-                              key={item.to}
-                              to={item.to}
-                              className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
-                                active
-                                  ? 'bg-slate-100 font-medium text-slate-900'
-                                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                              }`}
-                            >
-                              {item.label}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {!isGuest && (
-                    <Link
-                      to="/transaksi/riwayat"
-                      className={itemClass(location.pathname.startsWith('/transaksi/riwayat'))}
-                    >
-                      <span className={iconClass(location.pathname.startsWith('/transaksi/riwayat'))}>
-                        <FiCreditCard />
-                      </span>
-                      <span>Riwayat Transaksi</span>
+                      <p className="truncate">{item.label}</p>
                     </Link>
-                  )}
-                </div>
-              </section>
+                  );
+                })}
+              </div>
 
-              <section className="space-y-2">
-                <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Pengaturan
-                </p>
-                <div className="space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleDropdown('pengaturan')}
-                    className={`${itemClass(isActivePath(['/profil', '/about', '/bantuan', '/keamanan']))} w-full justify-between`}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => toggleDropdown('donasi')}
+                  className={`${itemClass(isActivePath(['/donasi/zakat', '/donasi/infaq-sedekah', '/donasi/wakaf']))} w-full justify-between`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={iconClass(isActivePath(['/donasi/zakat', '/donasi/infaq-sedekah', '/donasi/wakaf']))}>
+                      <FiCreditCard />
+                    </span>
+                    <p className="truncate">Program Donasi</p>
+                  </div>
+                  <FiChevronDown
+                    className={`text-sm flex-shrink-0 transition-transform ${
+                      openDropdown === 'donasi' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {openDropdown === 'donasi' && (
+                  <div className="ml-8 space-y-1">
+                    {donasiItems.map((item) => {
+                      const active = location.pathname.startsWith(item.to);
+                      return (
+                        <Link key={item.to} to={item.to} className={submenuClass(active)}>
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!isGuest && (
+                  <Link
+                    to="/transaksi/riwayat"
+                    className={itemClass(location.pathname.startsWith('/transaksi/riwayat'))}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className={iconClass(isActivePath(['/profil', '/about', '/bantuan', '/keamanan']))}>
-                        {isGuest ? <FiHelpCircle /> : <FiShield />}
-                      </span>
-                      <span>Pengaturan</span>
-                    </div>
-                    <FiChevronDown
-                      className={`text-sm transition-transform ${
-                        openDropdown === 'pengaturan' ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
+                    <span className={iconClass(location.pathname.startsWith('/transaksi/riwayat'))}>
+                      <FiCreditCard />
+                    </span>
+                    <p className="truncate">Riwayat Transaksi</p>
+                  </Link>
+                )}
+              </div>
 
-                  {openDropdown === 'pengaturan' && (
-                    <div className="ml-4 border-l border-slate-200 pl-4">
-                      <div className="space-y-1">
-                        {pengaturanItems.map((item) => {
-                          const active = location.pathname.startsWith(item.to);
-                          return (
-                            <Link
-                              key={item.to}
-                              to={item.to}
-                              className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
-                                active
-                                  ? 'bg-slate-100 font-medium text-slate-900'
-                                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                              }`}
-                            >
-                              {item.label}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => toggleDropdown('pengaturan')}
+                  className={`${itemClass(isActivePath(['/profil', '/about', '/bantuan', '/keamanan']))} w-full justify-between`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={iconClass(isActivePath(['/profil', '/about', '/bantuan', '/keamanan']))}>
+                      {isGuest ? <FiHelpCircle /> : <FiShield />}
+                    </span>
+                    <p className="truncate">Pengaturan</p>
+                  </div>
+                  <FiChevronDown
+                    className={`text-sm flex-shrink-0 transition-transform ${
+                      openDropdown === 'pengaturan' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {openDropdown === 'pengaturan' && (
+                  <div className="ml-8 space-y-1">
+                    {pengaturanItems.map((item) => {
+                      const active = location.pathname.startsWith(item.to);
+                      return (
+                        <Link key={item.to} to={item.to} className={submenuClass(active)}>
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </nav>
         </div>

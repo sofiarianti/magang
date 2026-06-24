@@ -1,10 +1,70 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import useAPI from '../../hooks/useAPI';
-import useUpdateTransaksi from '../../hooks/useUpdateTransaksi';
 import endpoints from '../../Services/endpointUser';
 import api from '../../Services/api';
+import {
+  buildBszPrintHtml,
+  getBszEligibleTransactions,
+  getBszEligibleYears,
+} from '../../Services/bszPrintTemplate';
+
+function getDonaturIdentity(user) {
+  return {
+    kode_donatur: String(user?.donatur?.kode_donatur || user?.kode_donatur || '').trim(),
+    nama_donatur: String(user?.donatur?.nama || user?.nama || '').trim(),
+    email_donatur: String(user?.donatur?.email || user?.email || '').trim(),
+    alamat_donatur: String(user?.donatur?.alamat || user?.alamat || '').trim(),
+    no_hp_donatur: String(user?.donatur?.no_hp || user?.no_hp || user?.donatur?.nomor_hp || '').trim(),
+  };
+}
+
+async function parseBlobResponse(blob) {
+  const mimeType = String(blob?.type || '').toLowerCase();
+
+  if (mimeType.includes('application/json') || mimeType.includes('text/json')) {
+    const text = await blob.text();
+    return JSON.parse(text);
+  }
+
+  return null;
+}
+
+function readBlobAsText(blob) {
+  return blob.text();
+}
+
+function openPendingPrintWindow() {
+  const printWindow = window.open('', '_blank', 'width=960,height=900');
+  if (!printWindow) return null;
+
+  printWindow.document.open();
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="id">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Menyiapkan BSZ</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; padding: 24px;">
+        <p>Menyiapkan BSZ untuk dicetak...</p>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  return printWindow;
+}
+
+function writeHtmlToPrintWindow(printWindow, html) {
+  if (!printWindow || printWindow.closed) return false;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  return true;
+}
 
 function RiwayatTransaksi({ user }) {
+  const identity = useMemo(() => getDonaturIdentity(user), [user]);
   const kd_donatur =
     user?.donatur?.kode_donatur ||
     user?.kode_donatur ||
@@ -15,22 +75,17 @@ function RiwayatTransaksi({ user }) {
     data,
     loading,
     error,
-    refetch,
   } = useAPI(
     kd_donatur ? endpoints.transaksi.getByKodeDonatur(kd_donatur) : null
   );
+  const { data: himpunData } = useAPI(endpoints.himpun.getAll);
+  const { data: detailHimpunData } = useAPI(endpoints.detail_himpun.getAll);
 
-  const { data: qrCodeData } = useAPI(endpoints.qrcode.getActive);
-  const { putTransaksi, loading: loadingUpdateTransaksi } = useUpdateTransaksi();
-
-  const [selectedTransaction, setSelectedTransaction] = useState(null);
-  const [selectedQrCode, setSelectedQrCode] = useState(null);
-  const [showQrModal, setShowQrModal] = useState(false);
-  const [qrImageError, setQrImageError] = useState(false);
-  const [qrImageUrl, setQrImageUrl] = useState('');
-  const [qrImageCandidates, setQrImageCandidates] = useState([]);
-  const [qrImageCandidateIndex, setQrImageCandidateIndex] = useState(0);
-  const [actionMessage, setActionMessage] = useState('');
+  const [selectedBszYear, setSelectedBszYear] = useState('');
+  const [generatedBszFile, setGeneratedBszFile] = useState(null);
+  const [bszMessage, setBszMessage] = useState('');
+  const [bszError, setBszError] = useState('');
+  const [isGeneratingBsz, setIsGeneratingBsz] = useState(false);
 
   const transaksiList = useMemo(() => {
     if (Array.isArray(data?.transaksi)) return data.transaksi;
@@ -38,6 +93,24 @@ function RiwayatTransaksi({ user }) {
     if (Array.isArray(data?.data)) return data.data;
     return [];
   }, [data]);
+
+  const himpunList = useMemo(() => {
+    if (Array.isArray(himpunData?.himpun)) return himpunData.himpun;
+    if (Array.isArray(himpunData)) return himpunData;
+    if (Array.isArray(himpunData?.data)) return himpunData.data;
+    if (himpunData && typeof himpunData === 'object' && !Array.isArray(himpunData)) {
+      return Object.values(himpunData);
+    }
+    return [];
+  }, [himpunData]);
+
+  const detailHimpunList = useMemo(() => {
+    if (Array.isArray(detailHimpunData?.detail_himpun)) return detailHimpunData.detail_himpun;
+    if (Array.isArray(detailHimpunData)) return detailHimpunData;
+    if (Array.isArray(detailHimpunData?.data)) return detailHimpunData.data;
+    if (Array.isArray(detailHimpunData?.result)) return detailHimpunData.result;
+    return [];
+  }, [detailHimpunData]);
 
   const formatRupiah = (nominal) => {
     if (nominal == null || nominal === '') return '-';
@@ -68,15 +141,90 @@ function RiwayatTransaksi({ user }) {
     trx?.status || trx?.status_transaksi || trx?.statusTransaksi || 'pending'
   );
 
+  const normalizeInlineText = (value) =>
+    String(value || '')
+      .replace(/\r?\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
   const normalizePaymentMethod = (trx) => (
+    trx?.metode_pembayaran ||
     trx?.detailTransaksi?.nama ||
     trx?.detail_transaksi?.nama ||
-    trx?.metode_pembayaran ||
     trx?.nama_detail_transaksi ||
     ''
   );
 
-  const isPendingStatus = (trx) => normalizeStatus(trx).toString().toLowerCase() === 'pending';
+  const getHimpunCode = (item) =>
+    String(
+      item?.kode_himpun ||
+      item?.kode ||
+      item?.kode_himpun_id ||
+      item?.himpun?.kode_himpun ||
+      ''
+    ).trim();
+
+  const getHimpunName = (item) =>
+    normalizeInlineText(
+      item?.nama_himpun ||
+      item?.nama ||
+      item?.himpun?.nama_himpun ||
+      item?.himpun?.nama ||
+      ''
+    );
+
+  const getDetailHimpunCode = (item) =>
+    String(
+      item?.kode_detail_himpun ||
+      item?.kode_detail_himpun_himpun ||
+      item?.kode_detail_transaksi ||
+      item?.kode ||
+      item?.kode_detail ||
+      item?.id ||
+      ''
+    ).trim();
+
+  const getDetailHimpunName = (item) =>
+    normalizeInlineText(item?.nama || item?.nama_detail_himpun || '');
+
+  const resolvePaymentMethodLabel = (trx) => {
+    const fallbackLabel = normalizeInlineText(normalizePaymentMethod(trx));
+    const fallbackLower = fallbackLabel.toLowerCase();
+    const kodeHimpun = String(trx?.kode_himpun || '').trim();
+    const kodeDetailHimpun = String(
+      trx?.kode_detail_transaksi ||
+      trx?.kode_detail_himpun ||
+      ''
+    ).trim();
+
+    const himpunItem =
+      himpunList.find((item) => getHimpunCode(item) === kodeHimpun) || null;
+    const himpunName = getHimpunName(himpunItem);
+    const himpunLower = himpunName.toLowerCase();
+    const isQris =
+      himpunLower === 'qris' ||
+      fallbackLower === 'qris' ||
+      fallbackLower.includes('qris');
+
+    if (isQris) {
+      return 'QRIS';
+    }
+
+    const detailHimpunItem =
+      detailHimpunList.find((item) => getDetailHimpunCode(item) === kodeDetailHimpun) || null;
+    const detailHimpunName = getDetailHimpunName(detailHimpunItem);
+
+    if (himpunName && detailHimpunName) {
+      return `${himpunName} - ${detailHimpunName}`;
+    }
+
+    if (himpunName) {
+      return himpunName;
+    }
+
+    return fallbackLabel || '-';
+  };
+
   const isProcessingStatus = (trx) => {
     const status = normalizeStatus(trx).toString().toLowerCase();
     return status === 'diproses' || status === 'processed' || status === 'processing';
@@ -85,8 +233,6 @@ function RiwayatTransaksi({ user }) {
     const status = normalizeStatus(trx).toString().toLowerCase();
     return status === 'success' || status === 'verified' || status === 'diverifikasi' || status === 'berhasil';
   };
-  const isQrisTransaction = (trx) => normalizePaymentMethod(trx).toString().toLowerCase().includes('qris');
-
   const getStatusBadge = (status) => {
     const s = (status || 'pending').toString().toLowerCase();
 
@@ -116,190 +262,113 @@ function RiwayatTransaksi({ user }) {
     );
   };
 
-  const getNormalizedApiUrl = () => {
-    const configuredUrl =
-      api?.defaults?.baseURL ||
-      process.env.REACT_APP_API_URL ||
-      window.location.origin;
-    return configuredUrl.replace(/\/$/, '');
-  };
+  const totalVerified = transaksiList.filter((t) => isSuccessStatus(t)).length;
+  const bszYears = useMemo(() => getBszEligibleYears(transaksiList), [transaksiList]);
+  const eligibleBszTransactions = useMemo(
+    () => getBszEligibleTransactions(transaksiList, selectedBszYear),
+    [transaksiList, selectedBszYear]
+  );
 
-  const getQrImageCandidates = (imagePath) => {
-    if (!imagePath) return [];
+  useEffect(() => {
+    setSelectedBszYear((currentValue) => {
+      if (currentValue && bszYears.includes(currentValue)) return currentValue;
+      return bszYears[0] || '';
+    });
+  }, [bszYears]);
 
-    const apiUrl = getNormalizedApiUrl();
-    const apiOrigin = new URL(apiUrl, window.location.origin).origin;
-    const rawPath = String(imagePath).trim();
-    const cleanPath = rawPath.replace(/^\/+/, '');
-    const fileName = cleanPath.split('/').pop();
-    const candidates = [];
-
-    const addCandidate = (value) => {
-      if (value && !candidates.includes(value)) {
-        candidates.push(value);
+  useEffect(() => {
+    return () => {
+      if (generatedBszFile?.url) {
+        URL.revokeObjectURL(generatedBszFile.url);
       }
     };
+  }, [generatedBszFile]);
 
-    if (/^https?:\/\//i.test(rawPath)) {
-      addCandidate(rawPath);
-      return candidates;
+  const handleGenerateBsz = async () => {
+    setBszMessage('');
+    setBszError('');
+
+    if (!identity.kode_donatur) {
+      setBszError('Kode donatur tidak ditemukan. Silakan login ulang terlebih dahulu.');
+      return;
     }
 
-    addCandidate(`${apiOrigin}/${cleanPath}`);
-    addCandidate(`${apiUrl}/${cleanPath}`);
-
-    if (cleanPath.startsWith('uploads/')) {
-      addCandidate(`${apiUrl}/api/${cleanPath}`);
+    if (!selectedBszYear) {
+      setBszError('Tidak ada riwayat zakat yang bisa dibuatkan BSZ.');
+      return;
     }
 
-    if (fileName) {
-      addCandidate(`${apiOrigin}/uploads/qrcodes/${fileName}`);
-      addCandidate(`${apiUrl}/uploads/qrcodes/${fileName}`);
-      addCandidate(`${apiUrl}/api/uploads/qrcodes/${fileName}`);
+    if (!eligibleBszTransactions.length) {
+      setBszError(`Tidak ada transaksi zakat pada tahun ${selectedBszYear}.`);
+      return;
     }
 
-    return candidates;
-  };
-
-  const resolveActiveQrCode = () => {
-    if (
-      qrCodeData &&
-      typeof qrCodeData === 'object' &&
-      !Array.isArray(qrCodeData) &&
-      (qrCodeData.image_qrcode || qrCodeData.image_url || qrCodeData.image || qrCodeData.url || qrCodeData.qr_image)
-    ) {
-      return qrCodeData;
+    const printWindow = openPendingPrintWindow();
+    if (!printWindow) {
+      setBszError('Popup cetak diblokir browser. Izinkan pop-up untuk situs ini lalu coba lagi.');
+      return;
     }
 
-    if (
-      qrCodeData?.data &&
-      typeof qrCodeData.data === 'object' &&
-      !Array.isArray(qrCodeData.data) &&
-      (qrCodeData.data.image_qrcode || qrCodeData.data.image_url || qrCodeData.data.image || qrCodeData.data.url || qrCodeData.data.qr_image)
-    ) {
-      return qrCodeData.data;
-    }
+    setIsGeneratingBsz(true);
 
-    if (Array.isArray(qrCodeData?.qrcode) && qrCodeData.qrcode[0]) {
-      return qrCodeData.qrcode[0];
-    }
+    try {
+      const response = await api.get(endpoints.laporan_bsz.generate, {
+        params: {
+          kode_donatur: identity.kode_donatur,
+          kodeDonatur: identity.kode_donatur,
+          tahun: selectedBszYear,
+          year: selectedBszYear,
+        },
+        responseType: 'blob',
+      });
 
-    if (Array.isArray(qrCodeData?.data) && qrCodeData.data[0]) {
-      return qrCodeData.data[0];
-    }
+      const jsonPayload = await parseBlobResponse(response.data);
+      const responseMimeType = String(response.data?.type || '').toLowerCase();
+      const htmlFromBackend =
+        responseMimeType.includes('text/html') ? await readBlobAsText(response.data) : '';
 
-    if (Array.isArray(qrCodeData) && qrCodeData[0]) {
-      return qrCodeData[0];
-    }
+      const html = htmlFromBackend || buildBszPrintHtml({
+        apiPayload: jsonPayload || {},
+        identity,
+        year: selectedBszYear,
+        transactions: eligibleBszTransactions,
+      });
 
-    if (qrCodeData && typeof qrCodeData === 'object' && !Array.isArray(qrCodeData)) {
-      for (const key in qrCodeData) {
-        let item = qrCodeData[key];
-        if (Array.isArray(item)) item = item[0];
-        if (
-          item &&
-          typeof item === 'object' &&
-          (item.image_qrcode || item.image_url || item.image || item.url || item.qr_image)
-        ) {
-          return item;
+      const htmlBlob = new Blob([html], { type: 'text/html' });
+      const htmlUrl = URL.createObjectURL(htmlBlob);
+
+      setGeneratedBszFile((previousFile) => {
+        if (previousFile?.url) {
+          URL.revokeObjectURL(previousFile.url);
         }
+
+        return {
+          name: `BSZ-${selectedBszYear}.html`,
+          url: htmlUrl,
+        };
+      });
+
+      const opened = writeHtmlToPrintWindow(printWindow, html);
+      setBszMessage(
+        opened
+          ? `BSZ tahun ${selectedBszYear} berhasil digenerate dan siap dicetak.`
+          : `BSZ tahun ${selectedBszYear} berhasil digenerate. Popup cetak diblokir browser, silakan buka file secara manual.`
+      );
+    } catch (error) {
+      if (printWindow && !printWindow.closed) {
+        printWindow.close();
       }
-    }
+      const backendMessage =
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        'Gagal generate BSZ.';
 
-    return null;
+      setBszError(backendMessage);
+    } finally {
+      setIsGeneratingBsz(false);
+    }
   };
-
-  const resetQrModal = () => {
-    setShowQrModal(false);
-    setSelectedTransaction(null);
-    setSelectedQrCode(null);
-    setQrImageError(false);
-    setQrImageUrl('');
-    setQrImageCandidates([]);
-    setQrImageCandidateIndex(0);
-  };
-
-  const handleQrDisplayError = () => {
-    const nextIndex = qrImageCandidateIndex + 1;
-    const nextUrl = qrImageCandidates[nextIndex];
-
-    if (nextUrl) {
-      setQrImageCandidateIndex(nextIndex);
-      setQrImageUrl(nextUrl);
-      return;
-    }
-
-    setQrImageError(true);
-  };
-
-  const handleOpenPendingQris = (trx) => {
-    setActionMessage('');
-
-    if (!isQrisTransaction(trx) || !isPendingStatus(trx)) {
-      return;
-    }
-
-    const qrCode = resolveActiveQrCode();
-    const imagePath =
-      qrCode?.image_qrcode ||
-      qrCode?.image_url ||
-      qrCode?.image ||
-      qrCode?.url ||
-      qrCode?.qr_image;
-
-    if (!qrCode || !imagePath) {
-      setActionMessage('QR Code aktif belum tersedia. Silakan coba lagi beberapa saat.');
-      return;
-    }
-
-    const candidates = getQrImageCandidates(imagePath);
-
-    if (!candidates.length) {
-      setActionMessage('QR Code aktif tidak memiliki URL gambar yang valid.');
-      return;
-    }
-
-    setSelectedTransaction(trx);
-    setSelectedQrCode(qrCode);
-    setQrImageCandidates(candidates);
-    setQrImageCandidateIndex(0);
-    setQrImageUrl(candidates[0]);
-    setQrImageError(false);
-    setShowQrModal(true);
-  };
-
-  const handleConfirmPayment = async () => {
-    if (!selectedTransaction) return;
-
-    const transactionId = selectedTransaction.id || selectedTransaction.id_transaksi;
-    if (!transactionId) {
-      setActionMessage('ID transaksi tidak ditemukan, jadi status belum bisa diperbarui.');
-      return;
-    }
-    const response = await putTransaksi(
-      transactionId,
-      selectedTransaction.kode_transaksi,
-      selectedTransaction.kode_donatur,
-      selectedTransaction.kode_jenis_donasi,
-      selectedTransaction.kode_detail_donasi,
-      selectedTransaction.kode_user,
-      selectedTransaction.kode_himpun,
-      selectedTransaction.kode_detail_transaksi,
-      selectedTransaction.jumlah_donasi,
-      'diproses'
-    );
-
-    if (!response) {
-      setActionMessage('Status pembayaran belum berhasil dikonfirmasi. Silakan coba lagi.');
-      return;
-    }
-
-    resetQrModal();
-    setActionMessage('Pembayaran Anda berhasil dikonfirmasi dan status transaksi berubah menjadi diproses.');
-    refetch();
-  };
-
-  const totalVerified = transaksiList.filter((t) => isSuccessStatus(t)).length;
 
   if (loading) {
     return (
@@ -342,12 +411,6 @@ function RiwayatTransaksi({ user }) {
           </p>
         </div>
 
-        {actionMessage && (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-6 py-4 text-sm font-medium text-blue-800">
-            {actionMessage}
-          </div>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-6 hover:shadow-md transition-all">
             <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Total Transaksi</p>
@@ -366,13 +429,95 @@ function RiwayatTransaksi({ user }) {
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-8 py-6 bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-700">
+            <div>
+              <h2 className="text-lg font-bold text-white">Cetak BSZ</h2>
+              <p className="text-sm text-slate-200 mt-1">
+                BSZ hanya tersedia untuk transaksi zakat yang sukses pada tahun yang dipilih.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-4 py-2 bg-white/20 text-white rounded-full text-sm font-semibold backdrop-blur-sm border border-white/30">
+              {bszYears.length} tahun zakat
+            </span>
+          </div>
+
+          <div className="px-8 py-6 space-y-5">
+            {bszError ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+                {bszError}
+              </div>
+            ) : null}
+
+            {bszMessage ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
+                {bszMessage}
+              </div>
+            ) : null}
+
+            <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-800">Tahun Zakat</label>
+                <select
+                  value={selectedBszYear}
+                  onChange={(event) => setSelectedBszYear(event.target.value)}
+                  disabled={!bszYears.length}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {!bszYears.length ? <option value="">Tidak ada riwayat zakat</option> : null}
+                  {bszYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGenerateBsz}
+                disabled={isGeneratingBsz || !selectedBszYear || !bszYears.length}
+                className="inline-flex items-center justify-center rounded-xl bg-blue-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isGeneratingBsz ? 'Memproses BSZ...' : 'Cetak BSZ'}
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600">
+              <p>
+                Riwayat zakat tahun terpilih: <span className="font-semibold text-slate-900">{eligibleBszTransactions.length}</span>
+              </p>
+              <p className="mt-1">
+                Kode Donatur: <span className="font-semibold text-slate-900">{identity.kode_donatur || '-'}</span>
+              </p>
+            </div>
+
+            {generatedBszFile ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold text-slate-900">File BSZ Terbaru</p>
+                <p className="mt-2 truncate text-sm text-slate-600">{generatedBszFile.name}</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <a
+                    href={generatedBszFile.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                  >
+                    Lihat File
+                  </a>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
           <div className="flex items-center justify-between px-8 py-6 bg-gradient-to-r from-blue-900 to-blue-800 border-b border-blue-700">
             <div>
               <h2 className="text-lg font-bold text-white">
                 Daftar Transaksi Donasi
               </h2>
               <p className="text-sm text-blue-100 mt-1">
-                Transaksi QRIS yang masih pending bisa dilanjutkan kembali dari sini
+                Pantau status seluruh transaksi donasi Anda dari sini
               </p>
             </div>
             <span className="inline-flex items-center px-4 py-2 bg-white/20 text-white rounded-full text-sm font-semibold backdrop-blur-sm border border-white/30">
@@ -407,8 +552,7 @@ function RiwayatTransaksi({ user }) {
                   trx.nama_detail_donasi ||
                   '-';
 
-                const metodePembayaran = normalizePaymentMethod(trx) || '-';
-                const canReopenQris = isQrisTransaction(trx) && isPendingStatus(trx);
+                const metodePembayaran = resolvePaymentMethodLabel(trx);
 
                 return (
                   <div
@@ -463,22 +607,7 @@ function RiwayatTransaksi({ user }) {
                             </div>
                           </div>
 
-                          {canReopenQris && (
-                            <div className="mt-4 flex flex-wrap items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenPendingQris(trx)}
-                                className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors"
-                              >
-                                Lanjutkan Pembayaran QRIS
-                              </button>
-                              <p className="text-xs text-slate-500">
-                                QR code hanya tersedia selama status transaksi masih pending.
-                              </p>
-                            </div>
-                          )}
-
-                          {isQrisTransaction(trx) && isProcessingStatus(trx) && (
+                          {resolvePaymentMethodLabel(trx).toString().toLowerCase() === 'qris' && isProcessingStatus(trx) && (
                             <p className="mt-4 text-xs text-blue-600 font-medium">
                               Pembayaran QRIS sudah dikonfirmasi oleh Anda dan sedang diverifikasi admin.
                             </p>
@@ -502,101 +631,6 @@ function RiwayatTransaksi({ user }) {
           )}
         </div>
       </main>
-
-      {showQrModal && selectedTransaction && selectedQrCode && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white p-6 md:p-8 flex items-center justify-between">
-              <div className="flex-1">
-                <h2 className="text-2xl md:text-3xl font-bold mb-2">Lanjutkan Pembayaran QRIS</h2>
-                <p className="text-purple-100 text-sm">
-                  Transaksi {selectedTransaction.kode_transaksi} masih pending dan bisa Anda lanjutkan
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={resetQrModal}
-                className="flex-shrink-0 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all duration-200"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="p-6 md:p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-5">
-                  <div className="rounded-2xl border border-purple-200 bg-purple-50 p-5">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-purple-700 mb-2">Status saat ini</p>
-                    <div className="mb-3">{getStatusBadge(normalizeStatus(selectedTransaction))}</div>
-                    <p className="text-sm text-slate-700">
-                      Setelah Anda klik tombol konfirmasi pembayaran, status transaksi akan berubah menjadi <strong>diproses</strong> dan QR code tidak akan ditampilkan lagi di riwayat.
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-2">
-                    <p className="text-sm font-semibold text-slate-800">Ringkasan Transaksi</p>
-                    <p className="text-sm text-slate-600">Kode: {selectedTransaction.kode_transaksi}</p>
-                    <p className="text-sm text-slate-600">Nominal: {formatRupiah(selectedTransaction.jumlah_donasi)}</p>
-                    <p className="text-sm text-slate-600">Metode: {normalizePaymentMethod(selectedTransaction) || 'QRIS'}</p>
-                  </div>
-
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                    <p className="text-sm font-semibold text-blue-900 mb-2">Petunjuk</p>
-                    <p className="text-sm text-slate-700">
-                      Scan QR code di samping menggunakan aplikasi pembayaran Anda. Jika pembayaran sudah berhasil, klik tombol konfirmasi di bawah.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-center justify-center space-y-4">
-                  <div className="bg-purple-50 p-6 rounded-2xl border-2 border-purple-200 shadow-lg">
-                    {qrImageError ? (
-                      <div className="w-56 h-56 flex flex-col items-center justify-center bg-slate-100 rounded-lg">
-                        <p className="text-slate-600 text-sm text-center">QR Code tidak dapat dimuat</p>
-                        <p className="text-xs text-slate-500 mt-2 text-center">Silakan hubungi admin</p>
-                      </div>
-                    ) : qrImageUrl ? (
-                      <img
-                        src={qrImageUrl}
-                        alt="QRIS QR Code"
-                        className="w-56 h-56 object-contain"
-                        onError={handleQrDisplayError}
-                      />
-                    ) : (
-                      <div className="w-56 h-56 flex items-center justify-center bg-slate-100 rounded-lg">
-                        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-600 text-center font-medium">
-                    QR Code untuk transaksi pending Anda
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-8 pt-6 border-t border-slate-200 space-y-3">
-                <button
-                  type="button"
-                  onClick={handleConfirmPayment}
-                  disabled={loadingUpdateTransaksi}
-                  className="w-full px-6 py-4 rounded-xl bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {loadingUpdateTransaksi ? 'Memproses konfirmasi pembayaran...' : 'Saya Sudah Melakukan Pembayaran'}
-                </button>
-                <button
-                  type="button"
-                  onClick={resetQrModal}
-                  className="w-full px-6 py-3 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
-                >
-                  Tutup dan Lanjutkan Nanti
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

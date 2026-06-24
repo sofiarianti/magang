@@ -1,7 +1,7 @@
 // src/services/api.js
 import axios from 'axios';
 
-const rawBaseURL = process.env.REACT_APP_API_URL || 'https://internal.mpzdt.my.id';
+const rawBaseURL = process.env.REACT_APP_API_URL || 'https://api.mpzdt.my.id';
 const normalizedBaseURL = rawBaseURL.replace(/^http:\/\//i, 'https://').replace(/\/+$/, '');
 
 const api = axios.create({
@@ -15,7 +15,7 @@ const api = axios.create({
 // Add request interceptor untuk debugging
 api.interceptors.request.use(
   (config) => {
-    console.log('📤 API Request:', {
+    console.log('Request:', {
       url: config.url,
       method: config.method,
       data: config.data
@@ -23,7 +23,6 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
-    console.error('❌ Request Error:', error);
     return Promise.reject(error);
   }
 );
@@ -31,21 +30,15 @@ api.interceptors.request.use(
 // Add response interceptor untuk debugging
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ API Response:', {
-      url: response.config?.url,
-      status: response.status,
-      data: response.data
-    });
+    console.log('Response:', response);
     return response;
   },
   (error) => {
-    console.error('❌ API Error:', {
+    console.error('API Error:', {
       url: error.config?.url,
       method: error.config?.method,
       status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message
+      data: error.response?.data
     });
     return Promise.reject(error);
   }
